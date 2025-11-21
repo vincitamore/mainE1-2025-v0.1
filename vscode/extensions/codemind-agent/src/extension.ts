@@ -484,6 +484,39 @@ async function handleOrchestratorRequest(userRequest: string, mentionedFiles: st
       // No metadata yet - buttons will appear after code generation
     });
 
+    // Phase 3.5: Load required files for code generation
+    chatSidebarProvider.updateMessage(planMessageId, {
+      content: planSummary + '\n\n📂 Loading required files...'
+    });
+
+    // Combine all files that need to be loaded: requiredFiles + affectedFiles for context
+    const filesToLoad = [...new Set([
+      ...(plan.requiredFiles || []),
+      ...plan.affectedFiles.filter(f => {
+        // Only load existing files, not ones we're creating
+        const step = plan.steps.find(s => s.filePath === f);
+        return step?.operation.type !== 'create';
+      })
+    ])];
+
+    let contextFiles: Array<{ path: string; content: string; language: string }> = [];
+    if (filesToLoad.length > 0) {
+      console.log(`[Orchestrator] Loading ${filesToLoad.length} file(s) for context:`, filesToLoad);
+      contextFiles = await contextManager.loadFiles(filesToLoad);
+      chatSidebarProvider.addMessage({
+        role: 'system',
+        content: `📎 Loaded ${contextFiles.length} file(s) for context: ${contextFiles.map(f => f.path).join(', ')}`
+      });
+    }
+
+    // Update workspace context with loaded files
+    if (contextFiles.length > 0) {
+      workspaceContext.mentionedFiles = [
+        ...(workspaceContext.mentionedFiles || []),
+        ...contextFiles
+      ];
+    }
+
     // Phase 4: Generate code for all files
     chatSidebarProvider.updateMessage(planMessageId, {
       content: planSummary + '\n\n🔧 Generating code with specialist agents...\n_(This may take several minutes for complex files)_'
