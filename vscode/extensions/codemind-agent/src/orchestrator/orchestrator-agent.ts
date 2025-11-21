@@ -149,19 +149,39 @@ Output Format: YAML (2-space indentation, no code fences)`
           role: 'system',
           content: `You are the Orchestrator's planning module. Create detailed, executable plans for multi-file operations.
 
-Requirements:
-- Specific file paths and operations
-- Proper dependency ordering
-- Rollback strategy
-- Verification steps
+Output Format: MARKDOWN with clear section delimiters
 
-Output Format: YAML
+Use this exact structure (NO ESCAPING NEEDED - write naturally!):
 
-Structure:
-- 2-space indentation
-- Multiline strings: | or > blocks
-- Lists: - syntax
-- Forward slashes in paths`
+## TASK
+code_generation
+
+## SUMMARY
+Brief description of the plan
+
+## STEPS
+
+### STEP 1: filename-or-identifier
+**Operation:** create|modify|delete|terminal
+**Command:** git init (only for terminal operations)
+**Rationale:** Why this step is needed. Use colons, quotes, any punctuation freely: no escaping!
+**Priority:** 1
+
+### STEP 2: another-file.ts
+**Operation:** create
+**Rationale:** Standard: tailwindcss, autoprefixer, "quoted text", etc.
+**Priority:** 2
+
+## METADATA
+**Required Files:** file1.ts, file2.ts
+**Affected Files:** output1.ts, output2.ts  
+**Complexity:** low|medium|high
+**Confidence:** 0.95
+
+Rules:
+- Each STEP must have Operation and Rationale
+- Priority determines execution order (lower = earlier)
+- Write text naturally - colons, quotes, newlines are ALL FINE`
         },
         {
           role: 'user',
@@ -173,56 +193,107 @@ Structure:
 
     console.log(`[Orchestrator] Raw LLM response (first 300 chars):`, response.content.substring(0, 300));
     
-    // Parse YAML with automatic technician repair on failure
-    const expectedStructure = toYAML({
-      taskType: 'code_generation',
-      summary: 'brief description',
-      steps: [{
-        filePath: 'path/to/file',
-        operation: {
-          type: 'create',
-          filePath: 'path/to/file',
-          reason: 'why needed'
-        },
-        priority: 1,
-        rationale: 'explanation',
-        risks: []
-      }],
-      requiredFiles: [],
-      affectedFiles: [],
-      estimatedComplexity: 'medium',
-      confidence: 0.85
-    });
+    // Parse using simple markdown-based extraction (NO ESCAPING ISSUES!)
+    const parsed = this.parseMarkdownPlan(response.content, taskAnalysis, workspaceContext);
     
-    const parsed = await parseYAMLWithTechnician<any>(
-      response.content,
-      this.llmProvider,
-      this.config,
-      'execution plan',
-      expectedStructure
-    );
-
-    if (parsed && typeof parsed === 'object') {
-      return this.validateAndRepairPlan(parsed, taskAnalysis, workspaceContext);
-    }
-
-    // LENIENT FALLBACK: Extract plan data with regex when YAML parsing fails
-    // We don't need perfect YAML - just extract the data!
-    console.log(`[Orchestrator] YAML parsing failed, attempting lenient regex extraction...`);
-    const extracted = this.extractPlanWithRegex(response.content, taskAnalysis, workspaceContext);
-    if (extracted && extracted.steps.length > 0) {
-      console.log(`[Orchestrator] ✅ Lenient extraction succeeded: ${extracted.steps.length} steps`);
-      return extracted;
+    if (parsed && parsed.steps.length > 0) {
+      console.log(`[Orchestrator] ✅ Parsed ${parsed.steps.length} steps from markdown plan`);
+      return parsed;
     }
 
     // Absolute fallback: Single-file operation
-    console.warn(`[Orchestrator] All parsing attempts failed, using fallback plan`);
+    console.warn(`[Orchestrator] Markdown parsing failed, using fallback plan`);
     return this.createFallbackPlan(userRequest, taskAnalysis, workspaceContext);
   }
   
   /**
-   * Extract plan data using regex when YAML parsing fails
-   * This is SUPER lenient - we just need the data, not perfect syntax
+   * Parse markdown-formatted plan (NO ESCAPING ISSUES!)
+   * Format uses clear section delimiters and markdown headers
+   */
+  private parseMarkdownPlan(
+    response: string,
+    taskAnalysis: any,
+    workspaceContext: WorkspaceContext
+  ): ExecutionPlan | null {
+    try {
+      // Extract TASK type
+      const taskMatch = response.match(/##\s*TASK\s*\n\s*(\w+)/i);
+      const taskType = taskMatch ? taskMatch[1] : 'code_generation';
+      
+      // Extract SUMMARY
+      const summaryMatch = response.match(/##\s*SUMMARY\s*\n\s*(.+?)(?=\n##|\n###|$)/is);
+      const summary = summaryMatch ? summaryMatch[1].trim() : 'Code generation plan';
+      
+      // Extract STEPS
+      const steps: any[] = [];
+      const stepRegex = /###\s*STEP\s+(\d+):\s*(.+?)\n\s*\*\*Operation:\*\*\s*(.+?)\n(?:\s*\*\*Command:\*\*\s*(.+?)\n)?\s*\*\*Rationale:\*\*\s*(.+?)(?=\n###|\n##|$)/gis;
+      
+      let stepMatch;
+      while ((stepMatch = stepRegex.exec(response)) !== null) {
+        const [_, stepNum, identifier, operation, command, rationale] = stepMatch;
+        
+        const step = {
+          filePath: identifier.trim(),
+          operation: {
+            type: operation.trim(),
+            content: '',
+            command: command ? command.trim() : undefined
+          },
+          rationale: rationale.trim(),
+          priority: parseInt(stepNum) || steps.length + 1,
+          risks: []
+        };
+        
+        steps.push(step);
+      }
+      
+      if (steps.length === 0) {
+        console.warn(`[Orchestrator] No steps found in markdown format`);
+        return null;
+      }
+      
+      // Extract METADATA
+      const requiredFilesMatch = response.match(/\*\*Required Files:\*\*\s*(.+?)(?=\n|$)/i);
+      const requiredFiles = requiredFilesMatch 
+        ? requiredFilesMatch[1].split(',').map(f => f.trim()).filter(f => f)
+        : [];
+      
+      const affectedFilesMatch = response.match(/\*\*Affected Files:\*\*\s*(.+?)(?=\n|$)/i);
+      const affectedFiles = affectedFilesMatch
+        ? affectedFilesMatch[1].split(',').map(f => f.trim()).filter(f => f)
+        : steps.map(s => s.filePath);
+      
+      const complexityMatch = response.match(/\*\*Complexity:\*\*\s*(\w+)/i);
+      const complexity = complexityMatch ? complexityMatch[1] : 'medium';
+      
+      const confidenceMatch = response.match(/\*\*Confidence:\*\*\s*([0-9.]+)/i);
+      const confidence = confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.85;
+      
+      // Build plan
+      const plan: ExecutionPlan = {
+        taskType: taskType as any,
+        summary,
+        steps,
+        requiredFiles,
+        affectedFiles,
+        estimatedComplexity: complexity as any,
+        confidence,
+        risks: [],
+        verificationSteps: ['Verify operations completed', 'Check for errors']
+      };
+      
+      console.log(`[Orchestrator] ✅ Markdown parse: ${steps.length} steps, confidence ${confidence}`);
+      return this.validateAndRepairPlan(plan, taskAnalysis, workspaceContext);
+      
+    } catch (error) {
+      console.error(`[Orchestrator] Markdown parsing failed:`, error);
+      return null;
+    }
+  }
+  
+  /**
+   * DEPRECATED: Old regex extraction for YAML format
+   * Keeping for reference but should not be needed with markdown format
    */
   private extractPlanWithRegex(
     response: string,
@@ -593,104 +664,73 @@ Consider:
 - BE CONSERVATIVE with "modify" operations - existing code works, don't break it!
 
 ## Response Format:
-Return YAML format only. No markdown code fences, no extra text.
+Return MARKDOWN format with clear section headers (##).
 
-**YAML Rules:**
-- 2-space indentation
-- Multiline strings: use | (literal) or > (folded)
-- Lists: use - (dash) syntax
-- Paths: forward slashes (src/utils/file.ts)
-- Terminal operations: include command and workingDirectory fields
+**NO ESCAPING NEEDED!** Write naturally - use colons, quotes, any punctuation freely.
+Markdown is forgiving: "Standard: tailwindcss", 'quotes work', embedded: colons: everywhere!
 
 **Examples:**
 
 Example 1 - CREATE new files:
-taskType: code_generation
-summary: Create a new utility function and add tests
-steps:
-  - filePath: src/utils/helper.ts
-    operation:
-      type: create
-      filePath: src/utils/helper.ts
-      content: // Helper utility function
-      reason: Create new utility function
-    priority: 1
-    rationale: |
-      New file - need utility function before tests can reference it.
-      This will be used across multiple components.
-    risks:
-      - May conflict with existing utilities
-    agentInputs: []
-requiredFiles:
-  - src/utils/index.ts
-  - src/types.ts
-affectedFiles:
-  - src/utils/helper.ts
-estimatedComplexity: medium
-risks:
-  - May need to update imports in other files
-verificationSteps:
-  - Run TypeScript compiler
-  - Run tests
-confidence: 0.85
+---
+## TASK
+code_generation
 
-Example 2 - MODIFY existing file (SURGICAL):
-taskType: refactoring
-summary: Add error handling to existing parseJSON function
-steps:
-  - filePath: src/utils/json.ts
-    operation:
-      type: modify
-      filePath: src/utils/json.ts
-      content: // Add try-catch
-      reason: Add error handling to parseJSON function only
-    priority: 1
-    rationale: |
-      SURGICAL CHANGE: Only modify parseJSON function.
-      Preserve all other functions in file exactly as they are.
-      Add try-catch block while maintaining existing behavior.
-    risks:
-      - May affect code that relies on parseJSON throwing errors
-    agentInputs: []
-requiredFiles:
-  - src/types.ts
-affectedFiles:
-  - src/utils/json.ts
-estimatedComplexity: low
-risks:
-  - Breaking change if callers expect exceptions
-verificationSteps:
-  - Check all callers of parseJSON
-  - Run unit tests
-confidence: 0.9
+## SUMMARY
+Create a new utility function and add tests
 
-Example 3 - TERMINAL operations:
-taskType: code_generation
-summary: Initialize new Next.js project with dependencies
-steps:
-  - filePath: package.json
-    operation:
-      type: create
-      filePath: package.json
-      content: // Package.json
-      reason: Define project dependencies
-    priority: 1
-    rationale: Need package.json before installing dependencies
-    risks: []
-    agentInputs: []
-  - filePath: install-dependencies
-    operation:
-      type: terminal
-      filePath: install-dependencies
-      command: pnpm install
-      workingDirectory: .
-      reason: Install project dependencies defined in package.json
-    priority: 2
-    rationale: |
-      Must install dependencies after creating package.json.
-      User will approve this command before execution.
-    risks:
-      - Network failure
+## STEPS
+
+### STEP 1: src/utils/helper.ts
+**Operation:** create
+**Rationale:** New file - need utility function before tests can reference it. This will be used across multiple components. Note: using standard patterns, TypeScript best practices.
+**Priority:** 1
+
+### STEP 2: src/utils/helper.test.ts
+**Operation:** create
+**Rationale:** Add comprehensive tests for helper utility. Test all "edge cases", normal: standard flows, and error: handling scenarios.
+**Priority:** 2
+
+## METADATA
+**Required Files:** src/utils/index.ts, src/types.ts
+**Affected Files:** src/utils/helper.ts, src/utils/helper.test.ts
+**Complexity:** medium
+**Confidence:** 0.85
+---
+
+Example 2 - TERMINAL operation:
+---
+## TASK
+code_generation
+
+## SUMMARY
+Initialize repository and install dependencies
+
+## STEPS
+
+### STEP 1: git-init
+**Operation:** terminal
+**Command:** git init
+**Rationale:** Initialize Git repository. Standard: version control setup.
+**Priority:** 1
+
+### STEP 2: package.json
+**Operation:** create
+**Rationale:** Define project dependencies: React, TypeScript, Vite, etc.
+**Priority:** 2
+
+### STEP 3: install-deps
+**Operation:** terminal
+**Command:** pnpm install
+**Rationale:** Install all dependencies from package.json. Note: user will approve this command.
+**Priority:** 3
+
+## METADATA
+**Required Files:** none
+**Affected Files:** package.json
+**Complexity:** low
+**Confidence:** 0.95
+---
       - Incompatible versions
     agentInputs: []
   - filePath: compile-project
