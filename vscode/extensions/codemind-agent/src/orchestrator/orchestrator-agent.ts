@@ -11,8 +11,8 @@
 
 import { LLMProvider, LLMConfig } from '../llm/provider';
 import { Agent, AgentAnalysis, CodeContext } from '../agents/agent';
-import { extractJSON } from '../utils/text-extraction';
-import { parseJSONWithTechnician } from '../utils/json-technician';
+import { parseYAMLWithTechnician } from '../utils/yaml-technician';
+import { toYAML } from '../utils/yaml-parser';
 import {
   OrchestratorTaskType,
   ExecutionPlan,
@@ -66,15 +66,14 @@ export class OrchestratorAgent {
           role: 'system',
           content: `You are the Orchestrator - a high-level planning agent that analyzes user requests and plans multi-file operations.
 
-⚠️ CRITICAL: You MUST return ONLY valid JSON.
-- NO markdown code fences
-- All string values on a SINGLE line
-- Use \\n for newlines (NOT actual newline characters)
-- Escape special characters: \\n \\t \\" \\\\
-- No trailing commas
-- Double quotes only
+Your task: Analyze the user's request and classify it.
+- Determine the task type (code generation, refactoring, bug fix, etc.)
+- Understand the user's intent
+- Assess the scope (single-file, multi-file, project-wide)
+- Identify required context files
+- Estimate complexity
 
-JSON WILL BE PARSED BY JSON.parse() - if it's malformed, the entire operation fails!`
+Output Format: YAML (2-space indentation, no code fences)`
         },
         {
           role: 'user',
@@ -84,19 +83,20 @@ JSON WILL BE PARSED BY JSON.parse() - if it's malformed, the entire operation fa
       this.config
     );
 
-    const jsonStr = extractJSON(response.content);
-    const parsed = await parseJSONWithTechnician<any>(
-      jsonStr,
+    const expectedStructure = toYAML({
+      taskType: 'code_generation',
+      intent: 'brief description',
+      scope: 'multi-file',
+      requiredContext: ['file paths'],
+      complexity: 'medium'
+    });
+
+    const parsed = await parseYAMLWithTechnician<any>(
+      response.content,
       this.llmProvider,
       this.config,
       'task analysis',
-      `{
-  "taskType": "code_generation" | "refactoring" | "bug_fix" | etc.,
-  "intent": "brief description",
-  "scope": "single-file" | "multi-file" | "project-wide",
-  "requiredContext": ["file paths or patterns"],
-  "complexity": "low" | "medium" | "high"
-}`
+      expectedStructure
     );
 
     if (parsed && typeof parsed === 'object') {
@@ -149,36 +149,19 @@ JSON WILL BE PARSED BY JSON.parse() - if it's malformed, the entire operation fa
           role: 'system',
           content: `You are the Orchestrator's planning module. Create detailed, executable plans for multi-file operations.
 
-Your plans must be:
-- Specific: Exact file paths and operations
-- Ordered: Dependencies resolved, proper sequence
-- Safe: No data loss, rollback possible
-- Verified: Include verification steps
+Requirements:
+- Specific file paths and operations
+- Proper dependency ordering
+- Rollback strategy
+- Verification steps
 
-⚠️⚠️⚠️ JSON FORMAT REQUIREMENTS (SYSTEM WILL CRASH IF VIOLATED) ⚠️⚠️⚠️
+Output Format: YAML
 
-1. Return ONLY valid JSON (NO markdown, NO code fences, NO extra text)
-2. Start your response with { and end with }
-3. Use forward slashes in paths: "src/file.ts" NOT "src\\\\file.ts"
-4. For "content" fields: Use MINIMAL placeholders like "// Generated" or "Placeholder"
-5. ONLY use these escape sequences: \\n \\t \\" \\\\ \\/
-6. NEVER use invalid escapes: \\s \\d \\w \\c \\x (JSON.parse will reject these)
-7. NO trailing commas anywhere
-8. Double quotes ONLY (never single quotes)
-
-✓ CORRECT examples:
-"content": "// Generated"
-"content": "Placeholder for implementation"
-"rationale": "Create new feature to handle user input"
-"filePath": "src/components/Button.tsx"
-
-✗ WRONG examples (WILL FAIL):
-"content": "TODO:\\n- Item 1\\n- Item 2"  ← Keep it simple!
-"content": "C:\\Users\\Name"  ← Use forward slashes!
-"rationale": "Create
-new feature"  ← Must be single line!
-
-Your JSON will be parsed by JSON.parse() - any syntax error = complete failure!`
+Structure:
+- 2-space indentation
+- Multiline strings: | or > blocks
+- Lists: - syntax
+- Forward slashes in paths`
         },
         {
           role: 'user',
@@ -188,37 +171,35 @@ Your JSON will be parsed by JSON.parse() - any syntax error = complete failure!`
       { ...this.config, temperature: 0.3 } // Lower temperature for planning
     );
 
-    console.log(`[Orchestrator] Raw LLM response (first 200 chars):`, response.content.substring(0, 200));
+    console.log(`[Orchestrator] Raw LLM response (first 300 chars):`, response.content.substring(0, 300));
     
-    const jsonStr = extractJSON(response.content);
-    console.log(`[Orchestrator] After extractJSON (length: ${jsonStr.length}, first 200 chars):`, jsonStr.substring(0, 200));
+    // Parse YAML with automatic technician repair on failure
+    const expectedStructure = toYAML({
+      taskType: 'code_generation',
+      summary: 'brief description',
+      steps: [{
+        filePath: 'path/to/file',
+        operation: {
+          type: 'create',
+          filePath: 'path/to/file',
+          reason: 'why needed'
+        },
+        priority: 1,
+        rationale: 'explanation',
+        risks: []
+      }],
+      requiredFiles: [],
+      affectedFiles: [],
+      estimatedComplexity: 'medium',
+      confidence: 0.85
+    });
     
-    const parsed = await parseJSONWithTechnician<any>(
-      jsonStr,
+    const parsed = await parseYAMLWithTechnician<any>(
+      response.content,
       this.llmProvider,
       this.config,
       'execution plan',
-      `{
-  "taskType": "operation type",
-  "summary": "brief description",
-  "steps": [
-    {
-      "filePath": "path/to/file",
-      "operation": {
-        "type": "create" | "modify" | "delete" | "rename",
-        "filePath": "same as parent",
-        "content": "brief placeholder - NOT full code",
-        "reason": "why this operation"
-      },
-      "priority": 1,
-      "rationale": "detailed explanation",
-      "risks": ["potential issues"]
-    }
-  ],
-  "affectedFiles": ["list of file paths"],
-  "estimatedComplexity": "low" | "medium" | "high",
-  "confidence": 0.85
-}`
+      expectedStructure
     );
 
     if (parsed && typeof parsed === 'object') {
@@ -458,157 +439,138 @@ Consider:
 - BE CONSERVATIVE with "modify" operations - existing code works, don't break it!
 
 ## Response Format:
-Return ONLY valid JSON (no markdown code fences, no extra text):
+Return YAML format only. No markdown code fences, no extra text.
 
-⚠️⚠️⚠️ CRITICAL JSON RULES (FAILURE = SYSTEM CRASH) ⚠️⚠️⚠️
+**YAML Rules:**
+- 2-space indentation
+- Multiline strings: use | (literal) or > (folded)
+- Lists: use - (dash) syntax
+- Paths: forward slashes (src/utils/file.ts)
+- Terminal operations: include command and workingDirectory fields
 
-1. VALID JSON escape sequences ONLY:
-   - \\n (newline)
-   - \\t (tab)
-   - \\" (quote)
-   - \\\\ (backslash)
-   - \\/ (forward slash)
-   
-2. INVALID escape sequences (WILL CAUSE ERRORS):
-   - \\s (invalid)
-   - \\d (invalid)
-   - \\w (invalid)
-   - \\u without 4 hex digits (invalid)
-   - \\ followed by any other character (invalid)
-
-3. For file paths: Use forward slashes (/) NOT backslashes (\\)
-   CORRECT: "src/utils/helper.ts"
-   WRONG: "src\\utils\\helper.ts" (requires escaping: "src\\\\utils\\\\helper.ts")
-
-4. For "content" field: Use SIMPLE placeholders ONLY
-   CORRECT: "// Generated"
-   CORRECT: "Placeholder"
-   WRONG: "TODO: implement \\n- Feature 1\\n- Feature 2" (keep it simple!)
-
-5. For terminal operations, add these fields to operation:
-   - "command": "pnpm install" (the shell command)
-   - "workingDirectory": "." (optional, defaults to workspace root)
-
-6. NO trailing commas, NO single quotes, NO actual newlines in strings
-
-EXAMPLES:
+**Examples:**
 
 Example 1 - CREATE new files:
-{
-  "taskType": "code_generation",
-  "summary": "Create a new utility function and add tests",
-  "steps": [
-    {
-      "filePath": "src/utils/helper.ts",
-      "operation": {
-        "type": "create",
-        "filePath": "src/utils/helper.ts",
-        "content": "// Helper utility function - full implementation will be generated",
-        "reason": "Create new utility function"
-      },
-      "priority": 1,
-      "rationale": "New file - need utility function before tests can reference it",
-      "risks": ["May conflict with existing utilities"],
-      "agentInputs": []
-    }
-  ],
-  "requiredFiles": ["src/utils/index.ts", "src/types.ts"],
-  "affectedFiles": ["src/utils/helper.ts"],
-  "estimatedComplexity": "medium",
-  "risks": ["May need to update imports in other files"],
-  "verificationSteps": ["Run TypeScript compiler", "Run tests"],
-  "confidence": 0.85
-}
+taskType: code_generation
+summary: Create a new utility function and add tests
+steps:
+  - filePath: src/utils/helper.ts
+    operation:
+      type: create
+      filePath: src/utils/helper.ts
+      content: // Helper utility function
+      reason: Create new utility function
+    priority: 1
+    rationale: |
+      New file - need utility function before tests can reference it.
+      This will be used across multiple components.
+    risks:
+      - May conflict with existing utilities
+    agentInputs: []
+requiredFiles:
+  - src/utils/index.ts
+  - src/types.ts
+affectedFiles:
+  - src/utils/helper.ts
+estimatedComplexity: medium
+risks:
+  - May need to update imports in other files
+verificationSteps:
+  - Run TypeScript compiler
+  - Run tests
+confidence: 0.85
 
 Example 2 - MODIFY existing file (SURGICAL):
-{
-  "taskType": "refactoring",
-  "summary": "Add error handling to existing parseJSON function",
-  "steps": [
-    {
-      "filePath": "src/utils/json.ts",
-      "operation": {
-        "type": "modify",
-        "filePath": "src/utils/json.ts",
-        "content": "// Add try-catch to parseJSON function",
-        "reason": "Add error handling to parseJSON function only"
-      },
-      "priority": 1,
-      "rationale": "SURGICAL CHANGE: Only modify parseJSON function, preserve all other functions in file",
-      "risks": ["May affect code that relies on parseJSON throwing errors"],
-      "agentInputs": []
-    }
-  ],
-  "requiredFiles": ["src/types.ts"],
-  "affectedFiles": ["src/utils/json.ts"],
-  "estimatedComplexity": "low",
-  "risks": ["Breaking change if callers expect exceptions"],
-  "verificationSteps": ["Check all callers of parseJSON", "Run unit tests"],
-  "confidence": 0.9
-}
+taskType: refactoring
+summary: Add error handling to existing parseJSON function
+steps:
+  - filePath: src/utils/json.ts
+    operation:
+      type: modify
+      filePath: src/utils/json.ts
+      content: // Add try-catch
+      reason: Add error handling to parseJSON function only
+    priority: 1
+    rationale: |
+      SURGICAL CHANGE: Only modify parseJSON function.
+      Preserve all other functions in file exactly as they are.
+      Add try-catch block while maintaining existing behavior.
+    risks:
+      - May affect code that relies on parseJSON throwing errors
+    agentInputs: []
+requiredFiles:
+  - src/types.ts
+affectedFiles:
+  - src/utils/json.ts
+estimatedComplexity: low
+risks:
+  - Breaking change if callers expect exceptions
+verificationSteps:
+  - Check all callers of parseJSON
+  - Run unit tests
+confidence: 0.9
 
 Example 3 - TERMINAL operations:
-{
-  "taskType": "code_generation",
-  "summary": "Initialize new Next.js project with dependencies",
-  "steps": [
-    {
-      "filePath": "package.json",
-      "operation": {
-        "type": "create",
-        "filePath": "package.json",
-        "content": "// Package.json with dependencies",
-        "reason": "Define project dependencies"
-      },
-      "priority": 1,
-      "rationale": "Need package.json before installing dependencies",
-      "risks": [],
-      "agentInputs": []
-    },
-    {
-      "filePath": "install-dependencies",
-      "operation": {
-        "type": "terminal",
-        "filePath": "install-dependencies",
-        "command": "pnpm install",
-        "workingDirectory": ".",
-        "reason": "Install project dependencies defined in package.json"
-      },
-      "priority": 2,
-      "rationale": "Must install dependencies after creating package.json",
-      "risks": ["Network failure", "Incompatible versions"],
-      "agentInputs": []
-    },
-    {
-      "filePath": "compile-project",
-      "operation": {
-        "type": "terminal",
-        "filePath": "compile-project",
-        "command": "pnpm run build",
-        "reason": "Verify project compiles successfully"
-      },
-      "priority": 3,
-      "rationale": "Verify all files compile after installation",
-      "risks": ["TypeScript errors", "Missing dependencies"],
-      "agentInputs": []
-    }
-  ],
-  "requiredFiles": [],
-  "affectedFiles": ["package.json"],
-  "estimatedComplexity": "medium",
-  "risks": ["Dependency conflicts", "Build failures"],
-  "verificationSteps": ["Check pnpm install success", "Verify build output", "Run type check"],
-  "confidence": 0.85
-}
+taskType: code_generation
+summary: Initialize new Next.js project with dependencies
+steps:
+  - filePath: package.json
+    operation:
+      type: create
+      filePath: package.json
+      content: // Package.json
+      reason: Define project dependencies
+    priority: 1
+    rationale: Need package.json before installing dependencies
+    risks: []
+    agentInputs: []
+  - filePath: install-dependencies
+    operation:
+      type: terminal
+      filePath: install-dependencies
+      command: pnpm install
+      workingDirectory: .
+      reason: Install project dependencies defined in package.json
+    priority: 2
+    rationale: |
+      Must install dependencies after creating package.json.
+      User will approve this command before execution.
+    risks:
+      - Network failure
+      - Incompatible versions
+    agentInputs: []
+  - filePath: compile-project
+    operation:
+      type: terminal
+      filePath: compile-project
+      command: pnpm run build
+      reason: Verify project compiles successfully
+    priority: 3
+    rationale: Verify all files compile after installation
+    risks:
+      - TypeScript errors
+      - Missing dependencies
+    agentInputs: []
+requiredFiles: []
+affectedFiles:
+  - package.json
+estimatedComplexity: medium
+risks:
+  - Dependency conflicts
+  - Build failures
+verificationSteps:
+  - Check pnpm install success
+  - Verify build output
+  - Run type check
+confidence: 0.85
 
-⚠️ CRITICAL REMINDERS: 
-- Keep "content" fields SHORT. Full code generation happens in a later phase!
-- "requiredFiles" = Files agents should READ for context (imports, types, related code)
-- "affectedFiles" = Files that will be MODIFIED/CREATED (automatically populated from steps)
-- Think: "What files do agents need to understand the codebase?" → requiredFiles
-- "modify" = SURGICAL changes only! Preserve existing code. Specify what to change in rationale.
-- "create" = New file or complete regeneration
-- BE CONSERVATIVE: Don't modify working code unless necessary!`;
+**Critical:**
+- Keep content fields brief (full generation happens later)
+- requiredFiles: context files (imports, types, related code)
+- affectedFiles: files to be modified/created
+- modify: surgical changes only, preserve existing code
+- create: new files
+- Output: raw YAML, no code fences`;
 
     return prompt;
   }
