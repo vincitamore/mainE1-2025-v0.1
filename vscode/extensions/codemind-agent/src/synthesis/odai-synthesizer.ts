@@ -337,7 +337,7 @@ USER REQUEST: Generate a COMPLETE, comprehensive ${context.language} document to
 - The file is currently EMPTY (just a title/stub)
 - You must generate the COMPLETE, COMPREHENSIVE document from scratch
 - Generate ALL sections, content, examples, diagrams, and details
-- This should be a production-ready, thorough document (3000-10000+ characters)
+- This should be a production-ready, thorough document
 - DO NOT return just a snippet or outline - generate the FULL content`;
       } else {
         // For normal code editing, tell LLM to only replace the selection
@@ -372,7 +372,7 @@ USER REQUEST: Generate a COMPLETE, comprehensive ${context.language} document.`;
 - The file is currently EMPTY or has minimal content
 - You must generate the COMPLETE, COMPREHENSIVE document from scratch
 - Generate ALL sections, content, examples, diagrams, and details
-- This should be a production-ready, thorough document (3000-10000+ characters)
+- This should be a production-ready, thorough document
 - DO NOT return just a snippet or outline - generate the FULL content`;
       } else {
         codeSection = `EXISTING CODE:
@@ -388,7 +388,7 @@ ${context.code}
 ⚠️ CRITICAL: You must generate the ENTIRE implementation, not just a stub or example!
 - If requirements specify "fully structured document with sections A, B, C, D" → Generate ALL sections completely
 - If requirements specify "include diagrams, code snippets, checklists" → Include ALL of them
-- If requirements specify comprehensive documentation → Generate thousands of characters, not just a few lines
+- If requirements specify comprehensive documentation → Generate complete, thorough content
 - DO NOT generate minimal examples - generate production-ready, COMPLETE content
 
 ${scopeInstructions}
@@ -421,55 +421,77 @@ You are writing the ACTUAL file content. Your response will be written DIRECTLY 
 2. Do NOT add markdown code fences unless they're part of the actual content
 3. Do NOT add explanations outside the file content
 4. Generate COMPLETE, COMPREHENSIVE, production-ready content
-5. For documentation: Include ASCII art, diagrams, full sections (3000-10000+ characters)
+5. For documentation: Include diagrams (if appropriate), full sections, complete examples
 6. For code: Include complete implementations with imports, types, error handling
 7. Your ENTIRE response = the ENTIRE file content
 
 CORRECT EXAMPLES:
 
-For a README.md file:
-\`\`\`
-  _____ _ _ _ _   
- / ____| | (_) | |  
-| |  __| |__| | |_ 
-| | |_ | '_ \\| | __|
-| |__| | | | | | |_ 
- \\_____|_| |_|_|\\__|
-
+For a README.md file (your ENTIRE response):
 # Project Title
 
+> A brief tagline describing the project
+
 ## Overview
-Full description here...
+Full description here covering what the project does, why it exists, and who it's for...
+
+## Features
+- Feature 1 with detailed explanation
+- Feature 2 with detailed explanation
+- Feature 3 with detailed explanation
 
 ## Architecture
 \`\`\`mermaid
 graph TD
-  A --> B
-\`\`\`
+  A[Component 1] --> B[Component 2]
+  B --> C[Component 3]
 \`\`\`
 
-For a TypeScript file:
+## Installation
+\`\`\`bash
+npm install project-name
 \`\`\`
+
+## Usage
+Complete usage examples with code...
+
+For a TypeScript file (your ENTIRE response):
 import { Something } from './types';
+import { anotherThing } from './utils';
 
+/**
+ * Class documentation
+ */
 export class MyClass {
-  constructor() {
-    // Full implementation
+  private data: string;
+  
+  constructor(input: string) {
+    this.data = input;
+  }
+  
+  public process(): void {
+    // Full implementation with error handling
   }
 }
-\`\`\`
 
-For an implementation plan:
-\`\`\`
+For an implementation plan (your ENTIRE response):
 # Implementation Plan
 
+## Overview
+Brief description of what we're building...
+
 ## Phase 1: Foundation
-- [ ] Task 1
-- [ ] Task 2
+- [ ] Set up project structure
+- [ ] Configure build tools
+- [ ] Initialize version control
 
 ## Phase 2: Core Features
+- [ ] Implement feature A
+- [ ] Implement feature B
 ...
-\`\`\``;
+
+## Testing Strategy
+Complete testing approach...`;
 
     const response = await this.llmProvider.generate(
       [
@@ -489,31 +511,44 @@ OUTPUT FORMAT (ABSOLUTELY MANDATORY):
 COMPLETENESS (ABSOLUTELY MANDATORY):
 6. Generate COMPLETE, COMPREHENSIVE content - NOT snippets, stubs, or placeholders
 7. If requirements specify sections A, B, C, D → Generate ALL sections with FULL content
-8. Documentation/plans should be 3000-10000+ characters with complete details
-9. Include ALL required ASCII art, diagrams, code examples, checklists, explanations
+8. Generate whatever length is necessary to fully accomplish the task
+9. Include diagrams (if appropriate), code examples, checklists, complete explanations
 10. Apply ALL recommendations from security, performance, architecture, and testing agents
 
 CORRECT EXAMPLES:
 
 For a README.md file (your ENTIRE response - NO JSON):
-  _____ _ _ _ _   
- / ____| | (_) | |  
-| |  __| |__| | |_ 
-| | |_ | '_ \\| | __|
-| |__| | | | | | |_ 
- \\_____|_| |_|_|\\__|
-
 # Project Title
 
+> A brief tagline
+
 ## Overview
-[3000+ characters of full content here...]
+Comprehensive description covering purpose, features, and usage...
+
+## Features
+- Complete feature descriptions
+- With detailed explanations
+- And usage examples
+
+## Installation
+\`\`\`bash
+npm install project-name
+\`\`\`
+
+## Usage
+Full usage documentation...
 
 For a TypeScript file (your ENTIRE response - NO JSON):
 import { Something } from './types';
+import { anotherThing } from './utils';
 
 export class MyClass {
   constructor() {
-    // Complete implementation
+    // Complete implementation with error handling
+  }
+  
+  public method(): void {
+    // Full method implementation
   }
 }
 
@@ -523,7 +558,7 @@ WRONG - Do NOT do this:
 # Title
 \`\`\`  ← NO CODE FENCES (unless part of file)
 
-SUCCESS = Your raw response written directly to file (3000+ chars for documents)`
+SUCCESS = Your raw response written directly to file`
         },
         { role: 'user', content: prompt }
       ],
