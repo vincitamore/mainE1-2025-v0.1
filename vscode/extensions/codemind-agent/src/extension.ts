@@ -309,8 +309,26 @@ export function activate(context: vscode.ExtensionContext) {
       vscode.window.showInformationMessage('CodeMind: Code review feature coming soon!');
     }
   );
+
+  // Register open chat command
+  const openChat = vscode.commands.registerCommand(
+    'codemind.openChat',
+    async () => {
+      // Focus the CodeMind chat view
+      await vscode.commands.executeCommand('codemind.chatView.focus');
+    }
+  );
   
-  context.subscriptions.push(inlineEdit, reviewCode);
+  context.subscriptions.push(inlineEdit, reviewCode, openChat);
+
+  // Auto-open the chat sidebar on first activation
+  setTimeout(async () => {
+    try {
+      await vscode.commands.executeCommand('codemind.chatView.focus');
+    } catch (error) {
+      console.log('[CodeMind] Could not auto-open chat (view may not be ready)');
+    }
+  }, 1000);
 }
 
 /**

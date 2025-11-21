@@ -16,6 +16,25 @@
   ],
   "main": "./out/extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codemind-sidebar",
+          "title": "CodeMind Orchestrator",
+          "icon": "$(robot)"
+        }
+      ]
+    },
+    "views": {
+      "codemind-sidebar": [
+        {
+          "type": "webview",
+          "id": "codemind.chatView",
+          "name": "Chat",
+          "contextualTitle": "CodeMind Chat"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "codemind.inlineEdit",
@@ -25,6 +44,11 @@
       {
         "command": "codemind.reviewCode",
         "title": "CodeMind: Review Code"
+      },
+      {
+        "command": "codemind.openChat",
+        "title": "CodeMind: Open Chat",
+        "icon": "$(comment-discussion)"
       }
     ],
     "keybindings": [
@@ -38,16 +62,15 @@
     "configuration": {
       "title": "CodeMind",
       "properties": {
-        "codemind.primaryProvider": {
-          "type": "string",
-          "default": "openai",
-          "enum": ["openai", "anthropic", "local"],
-          "description": "Primary LLM provider"
-        },
-        "codemind.openai.apiKey": {
+        "codemind.openrouter.apiKey": {
           "type": "string",
           "default": "",
-          "description": "OpenAI API Key"
+          "description": "OpenRouter API Key"
+        },
+        "codemind.openrouter.model": {
+          "type": "string",
+          "default": "x-ai/grok-beta",
+          "description": "OpenRouter model to use"
         },
         "codemind.qualityThreshold": {
           "type": "number",
@@ -55,6 +78,13 @@
           "minimum": 0,
           "maximum": 10,
           "description": "Quality threshold for N2 loop"
+        },
+        "codemind.maxIterations": {
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 10,
+          "description": "Maximum iterations for N2 self-correction loop"
         }
       }
     }
@@ -72,5 +102,8 @@
     "@typescript-eslint/parser": "^6.x",
     "eslint": "^8.x",
     "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "marked": "^11.1.1"
   }
 }

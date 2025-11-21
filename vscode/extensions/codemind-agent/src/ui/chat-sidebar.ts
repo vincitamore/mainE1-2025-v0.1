@@ -56,7 +56,7 @@ export interface ChatSession {
  * Chat Sidebar Provider
  */
 export class ChatSidebarProvider implements vscode.WebviewViewProvider {
-  public static readonly viewType = 'codemind.chatSidebar';
+  public static readonly viewType = 'codemind.chatView';
   
   private _view?: vscode.WebviewView;
   private _currentSession: ChatSession;
