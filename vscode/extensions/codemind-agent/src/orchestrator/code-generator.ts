@@ -300,10 +300,17 @@ export class CodeGenerator {
     let content = '';
     let language = 'typescript'; // Default
 
+    // Convert workspace-relative path to absolute
+    const path = require('path');
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    const absolutePath = path.isAbsolute(filePath) 
+      ? filePath 
+      : path.join(workspaceRoot, filePath);
+
     // For modify operations, read existing content
     if (operation.type === 'modify' || operation.type === 'rename') {
       try {
-        const uri = vscode.Uri.file(filePath);
+        const uri = vscode.Uri.file(absolutePath);
         const document = await vscode.workspace.openTextDocument(uri);
         content = document.getText();
         language = document.languageId;
@@ -360,7 +367,14 @@ export class CodeGenerator {
    */
   private async getFileDiagnostics(filePath: string): Promise<CodeContext['diagnostics']> {
     try {
-      const uri = vscode.Uri.file(filePath);
+      // Convert workspace-relative path to absolute
+      const path = require('path');
+      const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+      const absolutePath = path.isAbsolute(filePath) 
+        ? filePath 
+        : path.join(workspaceRoot, filePath);
+
+      const uri = vscode.Uri.file(absolutePath);
       const vscDiagnostics = vscode.languages.getDiagnostics(uri);
 
       return vscDiagnostics.map(d => ({

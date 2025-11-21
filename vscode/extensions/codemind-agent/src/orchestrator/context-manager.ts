@@ -32,6 +32,7 @@ export class ContextManager {
     const diagnostics = this.getDiagnostics();
 
     return {
+      workspaceRoot: this.workspaceRoot,
       currentFile,
       openFiles,
       recentFiles,

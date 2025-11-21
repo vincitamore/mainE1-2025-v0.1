@@ -72,6 +72,7 @@ export interface ExecutionPlan {
  * Context gathered from the workspace
  */
 export interface WorkspaceContext {
+  workspaceRoot: string;      // Absolute path to workspace root
   currentFile?: {
     path: string;
     content: string;

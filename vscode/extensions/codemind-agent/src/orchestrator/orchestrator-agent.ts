@@ -378,11 +378,24 @@ ${workspaceContext.currentFile.content.substring(0, 1000)}${workspaceContext.cur
     }
 
     prompt += `
+## Workspace Root:
+${workspaceContext.workspaceRoot || 'No workspace open'}
+
+⚠️⚠️⚠️ CRITICAL FILE PATH RULES ⚠️⚠️⚠️
+ALL file paths MUST be RELATIVE to the workspace root shown above!
+
+CORRECT: "README.md", "src/utils/helper.ts", "docs/guide.md"
+WRONG: "C:\\README.md", "/Users/name/project/README.md", "C:/Users/..."
+
+If user says "create README.md" → use "README.md" (workspace root)
+If user says "create in src/" → use "src/filename.ext"
+NEVER use absolute paths starting with C:\\ or /
+
 ## Your Task:
 Create a detailed execution plan with specific file operations.
 
 For each file that needs to be changed:
-1. Specify the exact file path
+1. Specify the WORKSPACE-RELATIVE file path (e.g., "src/index.ts", NOT "C:\\src\\index.ts")
 2. Operation type (create, modify, delete, rename)
 3. Why this change is needed
 4. What risks it involves
@@ -466,8 +479,8 @@ Return ONLY valid JSON (no markdown code fences, no extra text):
       taskType: this.parseTaskType(parsed.taskType || taskAnalysis.taskType),
       summary: parsed.summary || 'Execute user request',
       steps: [],
-      requiredFiles: Array.isArray(parsed.requiredFiles) ? parsed.requiredFiles : [],
-      affectedFiles: Array.isArray(parsed.affectedFiles) ? parsed.affectedFiles : [],
+      requiredFiles: Array.isArray(parsed.requiredFiles) ? parsed.requiredFiles.map((f: string) => this.normalizeFilePath(f, workspaceContext)) : [],
+      affectedFiles: Array.isArray(parsed.affectedFiles) ? parsed.affectedFiles.map((f: string) => this.normalizeFilePath(f, workspaceContext)) : [],
       estimatedComplexity: parsed.estimatedComplexity || taskAnalysis.complexity || 'medium',
       risks: Array.isArray(parsed.risks) ? parsed.risks : [],
       verificationSteps: Array.isArray(parsed.verificationSteps) ? parsed.verificationSteps : [],
@@ -478,35 +491,76 @@ Return ONLY valid JSON (no markdown code fences, no extra text):
     if (Array.isArray(parsed.steps)) {
       plan.steps = parsed.steps
         .filter((step: any) => step && typeof step === 'object' && step.operation)
-        .map((step: any, index: number) => ({
-          filePath: step.filePath || step.operation.filePath || `unknown-${index}`,
-          operation: {
-            type: step.operation.type || 'modify',
-            filePath: step.operation.filePath || step.filePath || `unknown-${index}`,
-            newPath: step.operation.newPath,
-            content: step.operation.content,
-            reason: step.operation.reason || 'User requested change',
-            dependencies: step.operation.dependencies || []
-          },
-          priority: typeof step.priority === 'number' ? step.priority : index + 1,
-          rationale: step.rationale || step.operation.reason || 'Required for user request',
-          risks: Array.isArray(step.risks) ? step.risks : [],
-          agentInputs: step.agentInputs || []
-        }));
+        .map((step: any, index: number) => {
+          const filePath = this.normalizeFilePath(step.filePath || step.operation.filePath || `unknown-${index}`, workspaceContext);
+          return {
+            filePath,
+            operation: {
+              type: step.operation.type || 'modify',
+              filePath,
+              newPath: step.operation.newPath ? this.normalizeFilePath(step.operation.newPath, workspaceContext) : undefined,
+              content: step.operation.content,
+              reason: step.operation.reason || 'User requested change',
+              dependencies: Array.isArray(step.operation.dependencies) 
+                ? step.operation.dependencies.map((d: string) => this.normalizeFilePath(d, workspaceContext))
+                : []
+            },
+            priority: typeof step.priority === 'number' ? step.priority : index + 1,
+            rationale: step.rationale || step.operation.reason || 'Required for user request',
+            risks: Array.isArray(step.risks) ? step.risks : [],
+            agentInputs: step.agentInputs || []
+          };
+        });
     }
 
     // Sort steps by priority
     plan.steps.sort((a, b) => a.priority - b.priority);
 
     // Ensure affectedFiles includes all step file paths
-    const stepFiles = new Set(plan.steps.map(s => s.filePath));
-    stepFiles.forEach(file => {
+    const stepFiles = new Set(plan.steps.map((s: any) => s.filePath));
+    stepFiles.forEach((file: string) => {
       if (!plan.affectedFiles.includes(file)) {
         plan.affectedFiles.push(file);
       }
     });
 
     return plan;
+  }
+
+  /**
+   * Normalize file path to be workspace-relative
+   * Converts absolute paths (C:\path, /path) to relative paths
+   */
+  private normalizeFilePath(filePath: string, workspaceContext: WorkspaceContext): string {
+    if (!filePath) {
+      return '';
+    }
+
+    const path = require('path');
+    const workspaceRoot = workspaceContext.workspaceRoot;
+
+    // If no workspace root, return as-is (shouldn't happen)
+    if (!workspaceRoot) {
+      console.warn('[Orchestrator] No workspace root, cannot normalize path:', filePath);
+      return filePath;
+    }
+
+    // If already relative (doesn't start with drive letter or /), return as-is
+    if (!path.isAbsolute(filePath)) {
+      // Clean up ./ prefix if present
+      return filePath.replace(/^\.\//, '').replace(/^\.\\/, '');
+    }
+
+    // Convert absolute path to workspace-relative
+    try {
+      const relativePath = path.relative(workspaceRoot, filePath);
+      console.log(`[Orchestrator] Normalized ${filePath} → ${relativePath}`);
+      return relativePath.replace(/\\/g, '/'); // Use forward slashes for consistency
+    } catch (error) {
+      console.error('[Orchestrator] Failed to normalize path:', filePath, error);
+      // Fall back to extracting just the filename
+      return path.basename(filePath);
+    }
   }
 
   /**

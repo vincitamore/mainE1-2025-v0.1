@@ -565,12 +565,25 @@ async function handleApplyChanges(messageId: string) {
     });
 
     // Build file operations with generated content
+    // Convert workspace-relative paths to absolute paths
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+    const path = require('path');
+    
     const operations = (generationResults as any[])
       .filter((r: any) => r.converged && r.generatedContent)
-      .map((r: any) => ({
-        ...r.operation,
-        content: r.generatedContent
-      }));
+      .map((r: any) => {
+        // Convert relative path to absolute
+        const absolutePath = path.isAbsolute(r.operation.filePath)
+          ? r.operation.filePath
+          : path.join(workspaceRoot, r.operation.filePath);
+        
+        return {
+          ...r.operation,
+          filePath: absolutePath,
+          newPath: r.operation.newPath ? path.join(workspaceRoot, r.operation.newPath) : undefined,
+          content: r.generatedContent
+        };
+      });
 
     if (operations.length === 0) {
       chatSidebarProvider.updateMessage(progressMsgId, {
