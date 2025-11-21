@@ -30,8 +30,15 @@
       "codemind-sidebar": [
         {
           "type": "webview",
+          "id": "codemind.chatSidebar",
+          "name": "Orchestrator",
+          "icon": "$(comment-discussion)"
+        },
+        {
+          "type": "webview",
           "id": "codemind.analysisView",
-          "name": "Analysis"
+          "name": "Analysis",
+          "icon": "$(search-view-icon)"
         }
       ]
     },

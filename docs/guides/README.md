@@ -35,3 +35,4 @@ Quick setup guide for OpenRouter integration:
 3. **Read Implementation Plan** → [`../implementation/IMPLEMENTATION_PLAN.md`](../implementation/IMPLEMENTATION_PLAN.md)
 4. **Start Contributing** → (Coming soon: Contributing guide)
 
+

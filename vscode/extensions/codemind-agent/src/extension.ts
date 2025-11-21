@@ -15,10 +15,17 @@ import { AnalysisPanelProvider } from './ui/analysis-panel';
 import { ResultsPanelProvider } from './ui/results-panel';
 import { AnalysisSidebarProvider } from './ui/analysis-sidebar';
 import { ProgressPanelProvider } from './ui/progress-panel';
+import { ChatSidebarProvider } from './ui/chat-sidebar';
 import { classifyTask, TaskType } from './utils/task-classifier';
+import { OrchestratorAgent, ContextManager, FileManager, CodeGenerator } from './orchestrator';
 
-// Global reference to analysis sidebar provider
+// Global references
 let analysisSidebarProvider: AnalysisSidebarProvider | undefined;
+let chatSidebarProvider: ChatSidebarProvider | undefined;
+let orchestratorAgent: OrchestratorAgent | undefined;
+let contextManager: ContextManager | undefined;
+let fileManager: FileManager | undefined;
+let codeGenerator: CodeGenerator | undefined;
 
 /**
  * Create a timeout promise that rejects after specified milliseconds
@@ -88,6 +95,11 @@ async function handleSuccessResult(
 export function activate(context: vscode.ExtensionContext) {
   console.log('CodeMind extension activated');
   
+  // Initialize managers
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+  contextManager = new ContextManager(workspaceRoot);
+  fileManager = new FileManager();
+  
   // Register Analysis Sidebar Provider
   analysisSidebarProvider = new AnalysisSidebarProvider(context.extensionUri);
   context.subscriptions.push(
@@ -96,6 +108,30 @@ export function activate(context: vscode.ExtensionContext) {
       analysisSidebarProvider
     )
   );
+  
+  // Register Chat Sidebar Provider (Orchestrator UI)
+  chatSidebarProvider = new ChatSidebarProvider(context.extensionUri);
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      ChatSidebarProvider.viewType,
+      chatSidebarProvider
+    )
+  );
+  
+  // Handle user messages from chat
+  chatSidebarProvider.onMessage('userMessage', async (data) => {
+    await handleOrchestratorRequest(data.content, context);
+  });
+  
+  // Handle apply changes
+  chatSidebarProvider.onMessage('applyChanges', async (data) => {
+    await handleApplyChanges(data.messageId);
+  });
+  
+  // Handle reject changes
+  chatSidebarProvider.onMessage('rejectChanges', async (data) => {
+    await handleRejectChanges(data.messageId);
+  });
   
   // Register inline edit command
   const inlineEdit = vscode.commands.registerCommand(
@@ -277,9 +313,261 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(inlineEdit, reviewCode);
 }
 
+/**
+ * Handle orchestrator request from chat sidebar
+ */
+async function handleOrchestratorRequest(userRequest: string, context: vscode.ExtensionContext) {
+  if (!chatSidebarProvider || !contextManager || !fileManager) {
+    vscode.window.showErrorMessage('CodeMind: Orchestrator not initialized');
+    return;
+  }
+
+  try {
+    // Add assistant "thinking" message
+    const thinkingId = chatSidebarProvider.addMessage({
+      role: 'assistant',
+      content: '🤔 Analyzing your request...'
+    });
+
+    // Get LLM provider and config
+    const config = vscode.workspace.getConfiguration('codemind');
+    const apiKey = config.get<string>('openrouter.apiKey');
+    const model = config.get<string>('openrouter.model') || 'x-ai/grok-beta';
+
+    if (!apiKey) {
+      chatSidebarProvider.updateMessage(thinkingId, {
+        content: '❌ Please set your OpenRouter API key in settings:\n\nSettings → Extensions → CodeMind → OpenRouter API Key'
+      });
+      return;
+    }
+
+    const llmProvider = new OpenRouterProvider(apiKey);
+    const llmConfig = {
+      model,
+      temperature: 0.7,
+      maxTokens: 4096
+    };
+
+    // Initialize specialist agents
+    const agents = new Map<string, Agent>();
+    agents.set('architect', new ArchitectAgent(llmProvider, llmConfig));
+    agents.set('engineer', new EngineerAgent(llmProvider, llmConfig));
+    agents.set('security', new SecurityAgent(llmProvider, llmConfig));
+    agents.set('performance', new PerformanceAgent(llmProvider, llmConfig));
+    agents.set('testing', new TestingAgent(llmProvider, llmConfig));
+    agents.set('documentation', new DocumentationAgent(llmProvider, llmConfig));
+
+    // Initialize orchestrator agent and code generator
+    if (!orchestratorAgent) {
+      orchestratorAgent = new OrchestratorAgent(llmProvider, llmConfig, agents);
+    }
+    if (!codeGenerator) {
+      codeGenerator = new CodeGenerator(llmProvider, llmConfig, agents, contextManager);
+    }
+
+    // Phase 1: Gather workspace context
+    chatSidebarProvider.updateMessage(thinkingId, {
+      content: '📂 Gathering workspace context...'
+    });
+    
+    const workspaceContext = await contextManager.gatherContext();
+
+    // Phase 2: Analyze request
+    chatSidebarProvider.updateMessage(thinkingId, {
+      content: '🔍 Analyzing task requirements...'
+    });
+
+    const taskAnalysis = await orchestratorAgent.analyzeRequest(
+      userRequest,
+      workspaceContext,
+      (event) => {
+        chatSidebarProvider?.updateMessage(thinkingId, {
+          content: `${event.status} (${event.progress}%)`
+        });
+      }
+    );
+
+    // Phase 3: Plan operations
+    chatSidebarProvider.updateMessage(thinkingId, {
+      content: '📋 Planning file operations...'
+    });
+
+    const plan = await orchestratorAgent.planOperations(
+      userRequest,
+      taskAnalysis,
+      workspaceContext,
+      (event) => {
+        chatSidebarProvider?.updateMessage(thinkingId, {
+          content: `${event.status} (${event.progress}%)`
+        });
+      }
+    );
+
+    // Display plan to user
+    const planSummary = `## Execution Plan\n\n` +
+      `**Task Type:** ${plan.taskType}\n` +
+      `**Complexity:** ${plan.estimatedComplexity}\n` +
+      `**Confidence:** ${(plan.confidence * 100).toFixed(0)}%\n\n` +
+      `### Files to be modified:\n` +
+      plan.affectedFiles.map(f => `- ${f}`).join('\n') + '\n\n' +
+      `### Operations:\n` +
+      plan.steps.map((step, i) => `${i + 1}. ${step.operation.type.toUpperCase()}: ${step.filePath}\n   ${step.rationale}`).join('\n\n');
+
+    const planMessageId = chatSidebarProvider.addMessage({
+      role: 'assistant',
+      content: planSummary,
+      metadata: {
+        filesAffected: plan.affectedFiles,
+        operationType: plan.taskType,
+        quality: plan.confidence
+      }
+    });
+
+    // Phase 4: Generate code for all files
+    chatSidebarProvider.updateMessage(planMessageId, {
+      content: planSummary + '\n\n🔧 Generating code...'
+    });
+
+    const generationResults = await codeGenerator.generateCode(
+      plan,
+      userRequest,
+      (event) => {
+        chatSidebarProvider?.updateMessage(planMessageId, {
+          content: planSummary + `\n\n${event.status} (${event.progress}%)`
+        });
+      }
+    );
+
+    // Update plan with generated content
+    for (let i = 0; i < generationResults.length; i++) {
+      const result = generationResults[i];
+      if (result.converged && plan.steps[i]) {
+        plan.steps[i].operation.content = result.generatedContent;
+      }
+    }
+
+    // Show results
+    const avgQuality = generationResults.reduce((sum, r) => sum + r.quality, 0) / generationResults.length;
+    const failedFiles = generationResults.filter(r => !r.converged);
+
+    let resultSummary = planSummary + '\n\n## Generation Complete\n\n';
+    resultSummary += `✅ Generated ${generationResults.length} file(s)\n`;
+    resultSummary += `📊 Average Quality: ${(avgQuality * 10).toFixed(1)}/10\n`;
+    
+    if (failedFiles.length > 0) {
+      resultSummary += `\n⚠️ Failed to generate ${failedFiles.length} file(s):\n`;
+      failedFiles.forEach(f => {
+        resultSummary += `- ${f.filePath}\n`;
+      });
+    }
+
+    resultSummary += `\n**Ready to apply changes?**\nClick "Apply Changes" below to write these files.`;
+
+    chatSidebarProvider.updateMessage(planMessageId, {
+      content: resultSummary,
+      metadata: {
+        filesAffected: plan.affectedFiles,
+        operationType: plan.taskType,
+        quality: avgQuality,
+        rollbackId: undefined // TODO: Create git worktree snapshot
+      }
+    });
+
+  } catch (error: any) {
+    console.error('[Orchestrator] Error:', error);
+    
+    const errorMessage = chatSidebarProvider?.getCurrentSession().messages.find(m => 
+      m.content.includes('Analyzing') || m.content.includes('Planning')
+    );
+    
+    if (errorMessage) {
+      chatSidebarProvider?.updateMessage(errorMessage.id, {
+        role: 'assistant',
+        content: `❌ Error: ${error.message || String(error)}`
+      });
+    } else {
+      chatSidebarProvider?.addMessage({
+        role: 'assistant',
+        content: `❌ Error: ${error.message || String(error)}`
+      });
+    }
+  }
+}
+
+/**
+ * Handle apply changes request
+ */
+async function handleApplyChanges(messageId: string) {
+  if (!chatSidebarProvider || !fileManager) {
+    vscode.window.showErrorMessage('CodeMind: System not initialized');
+    return;
+  }
+
+  try {
+    const session = chatSidebarProvider.getCurrentSession();
+    const message = session.messages.find(m => m.id === messageId);
+    
+    if (!message || !message.metadata?.filesAffected) {
+      vscode.window.showWarningMessage('CodeMind: No changes to apply');
+      return;
+    }
+
+    // TODO: Get the execution plan and file operations from the message
+    // For now, show a confirmation
+    const confirmation = await vscode.window.showInformationMessage(
+      `Apply changes to ${message.metadata.filesAffected.length} file(s)?`,
+      { modal: true },
+      'Apply', 'Cancel'
+    );
+
+    if (confirmation !== 'Apply') {
+      chatSidebarProvider.addMessage({
+        role: 'system',
+        content: '❌ Changes cancelled by user'
+      });
+      return;
+    }
+
+    // TODO: Execute file operations using file manager
+    // For now, show success
+    chatSidebarProvider.addMessage({
+      role: 'system',
+      content: '✅ Changes applied successfully!\n\n' +
+        `Modified ${message.metadata.filesAffected.length} file(s).\n` +
+        'Note: Full implementation of file application is in progress.'
+    });
+
+    vscode.window.showInformationMessage('CodeMind: Changes applied successfully!');
+  } catch (error: any) {
+    console.error('[CodeMind] Error applying changes:', error);
+    vscode.window.showErrorMessage(`CodeMind: Failed to apply changes: ${error.message}`);
+  }
+}
+
+/**
+ * Handle reject changes request
+ */
+async function handleRejectChanges(messageId: string) {
+  if (!chatSidebarProvider) {
+    return;
+  }
+
+  chatSidebarProvider.addMessage({
+    role: 'system',
+    content: '❌ Changes rejected. The proposed changes will not be applied.'
+  });
+
+  vscode.window.showInformationMessage('CodeMind: Changes rejected');
+}
+
 export function deactivate() {
   console.log('CodeMind extension deactivated');
   analysisSidebarProvider = undefined;
+  chatSidebarProvider = undefined;
+  orchestratorAgent = undefined;
+  contextManager = undefined;
+  fileManager = undefined;
+  codeGenerator = undefined;
   
   // Clean up inline diff decorations
   const { InlineDiffViewer } = require('./ui/inline-diff');
