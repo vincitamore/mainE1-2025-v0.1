@@ -1,0 +1,14 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Brain icon representing AI intelligence -->
+  <path d="M12 2C8.13 2 5 5.13 5 9c0 1.74.63 3.34 1.67 4.58L5.5 15.5C5.19 15.81 5 16.21 5 16.67V19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-2.33c0-.46-.19-.86-.5-1.17l-1.17-1.92C18.37 12.34 19 10.74 19 9c0-3.87-3.13-7-7-7z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Neural network nodes -->
+  <circle cx="9" cy="8" r="1" fill="currentColor"/>
+  <circle cx="12" cy="7" r="1" fill="currentColor"/>
+  <circle cx="15" cy="8" r="1" fill="currentColor"/>
+  <circle cx="10" cy="11" r="1" fill="currentColor"/>
+  <circle cx="14" cy="11" r="1" fill="currentColor"/>
+  <!-- Connections -->
+  <path d="M9 8l1 3M12 7l-2 4M15 8l-1 3M10 11l2 2M14 11l-2 2" stroke="currentColor" stroke-width="0.5" opacity="0.6"/>
+</svg>
+
+
