@@ -38,6 +38,7 @@ export interface ChatMessage {
     rollbackId?: string;
     quality?: number;
     sessionData?: any; // Stores plan and generation results for apply/reject
+    mentions?: string[]; // Files mentioned with @
   };
 }
 
@@ -181,17 +182,41 @@ export class ChatSidebarProvider implements vscode.WebviewViewProvider {
    * Handle user message from UI
    */
   private handleUserMessage(content: string) {
+    // Extract @mentions from the message
+    const mentions = this.extractMentionsFromText(content);
+    
+    console.log('[ChatSidebar] User message:', content);
+    console.log('[ChatSidebar] Extracted mentions:', mentions);
+
     // Add user message
     const messageId = this.addMessage({
       role: 'user',
-      content
+      content,
+      metadata: mentions.length > 0 ? { mentions } : undefined
     });
 
     // Emit event for extension to handle
     const handler = this._messageHandlers.get('userMessage');
     if (handler) {
-      handler({ messageId, content });
+      handler({ messageId, content, mentions });
     }
+  }
+
+  /**
+   * Extract @mentions from text
+   * Pattern: @file.ts or @"path with spaces.md"
+   */
+  private extractMentionsFromText(text: string): string[] {
+    const mentionPattern = /@(?:"([^"]+)"|(\S+))/g;
+    const mentions: string[] = [];
+    
+    let match;
+    while ((match = mentionPattern.exec(text)) !== null) {
+      const path = match[1] || match[2]; // Quoted or unquoted
+      mentions.push(path);
+    }
+    
+    return mentions;
   }
 
   /**
