@@ -296,9 +296,19 @@ export abstract class Agent {
       };
     }
     
-    // Absolute fallback if all parsing attempts failed
+    // LENIENT FALLBACK: Try to extract partial data from malformed YAML
+    // Since most fields are descriptive text for ODAI, we don't need perfect structure
     console.warn(`[${this.role}] YAML parsing failed:`, !result.success ? result.error : 'Unknown error');
+    console.log(`[${this.role}] Attempting lenient extraction from raw response...`);
     
+    const partialData = this.extractPartialDataFromRaw(response, expectedRelevance);
+    if (partialData.insights.length > 1) {  // If we extracted something useful
+      console.log(`[${this.role}] ✅ Lenient extraction succeeded - recovered ${partialData.insights.length} insights`);
+      return partialData;
+    }
+    
+    // Absolute fallback if even lenient extraction failed
+    console.warn(`[${this.role}] All parsing attempts failed, using minimal fallback`);
     return {
       agent: this.role,
       insights: ['Failed to parse response - using fallback'],
@@ -306,6 +316,66 @@ export abstract class Agent {
       recommendations: [],
       confidence: 0.3,
       relevance: expectedRelevance,  // Use expected relevance as fallback
+      executionTime: 0
+    };
+  }
+  
+  /**
+   * Extract partial data from raw response when YAML parsing fails
+   * This is lenient because most fields are just descriptive text for ODAI
+   */
+  private extractPartialDataFromRaw(response: string, expectedRelevance: number): AgentAnalysis {
+    const insights: string[] = [];
+    const critical: Issue[] = [];
+    const warnings: Issue[] = [];
+    const suggestions: Issue[] = [];
+    const recommendations: string[] = [];
+    
+    // Extract insights (lines under "insights:")
+    const insightsMatch = response.match(/insights:\s*\n((?:\s*-\s+.+\n?)*)/i);
+    if (insightsMatch) {
+      const insightLines = insightsMatch[1].match(/^\s*-\s+(.+)$/gm);
+      if (insightLines) {
+        insights.push(...insightLines.map(line => line.replace(/^\s*-\s+/, '').trim()));
+      }
+    }
+    
+    // Extract recommendations
+    const recsMatch = response.match(/recommendations:\s*\n((?:\s*-\s+.+\n?)*)/i);
+    if (recsMatch) {
+      const recLines = recsMatch[1].match(/^\s*-\s+(.+)$/gm);
+      if (recLines) {
+        recommendations.push(...recLines.map(line => line.replace(/^\s*-\s+/, '').trim()));
+      }
+    }
+    
+    // Extract confidence
+    let confidence = 0.7; // Default to moderate confidence for partially parsed
+    const confMatch = response.match(/confidence:\s*([0-9.]+)/i);
+    if (confMatch) {
+      const parsed = parseFloat(confMatch[1]);
+      if (!isNaN(parsed)) {
+        confidence = parsed;
+      }
+    }
+    
+    // Extract relevance
+    let relevance = expectedRelevance;
+    const relMatch = response.match(/relevance:\s*([0-9.]+)/i);
+    if (relMatch) {
+      const parsed = parseFloat(relMatch[1]);
+      if (!isNaN(parsed)) {
+        relevance = parsed;
+      }
+    }
+    
+    return {
+      agent: this.role,
+      insights: insights.length > 0 ? insights : ['Analysis completed (partial parse)'],
+      issues: { critical, warnings, suggestions },
+      recommendations: recommendations.length > 0 ? recommendations : ['See insights for details'],
+      confidence,
+      relevance,
       executionTime: 0
     };
   }

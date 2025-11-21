@@ -575,69 +575,41 @@ async function handleOrchestratorRequest(userRequest: string, mentionedFiles: st
       ];
     }
 
-    // Phase 4a: Separate terminal operations from file operations
-    const fileSteps = plan.steps.filter(step => step.operation.type !== 'terminal');
-    const terminalSteps = plan.steps.filter(step => step.operation.type === 'terminal');
+    // Phase 4: Execute plan steps IN ORDER (respecting dependencies)
+    console.log(`[Orchestrator] Executing ${plan.steps.length} steps in order...`);
     
-    console.log(`[Orchestrator] Total steps: ${plan.steps.length}, File steps: ${fileSteps.length}, Terminal steps: ${terminalSteps.length}`);
-    if (terminalSteps.length > 0) {
-      console.log(`[Orchestrator] Terminal steps:`, terminalSteps.map(s => `${s.filePath} (${s.operation.command})`));
-    }
-    
-    // Phase 4b: Generate code for file operations
     let generationResults: any[] = [];
-    if (fileSteps.length > 0) {
-      chatSidebarProvider.updateMessage(planMessageId, {
-        content: planSummary + '\n\n🔧 Generating code with specialist agents...\n_(This may take several minutes for complex files)_'
-      });
-
-      // Create a temporary plan with only file operations
-      const filePlan = { ...plan, steps: fileSteps };
-      
-      try {
-        generationResults = await codeGenerator.generateCode(
-          filePlan,
-          userRequest,
-          (event) => {
-            chatSidebarProvider?.updateMessage(planMessageId, {
-              content: planSummary + `\n\n${event.status} (${event.progress}%)`
-            });
-          },
-          true,  // applyImmediately - write files as soon as they're generated!
-          contextFiles  // Pass loaded files for context
-        );
-        
-        console.log(`[Orchestrator] File generation complete: ${generationResults.length} files generated`);
-      } catch (error) {
-        console.error(`[Orchestrator] File generation failed:`, error);
-        chatSidebarProvider.addMessage({
-          role: 'system',
-          content: `⚠️ File generation encountered errors: ${error instanceof Error ? error.message : 'Unknown error'}\n\nContinuing with terminal operations...`
-        });
-        // Continue to terminal operations even if file generation fails
-      }
-    }
+    const terminalResults: Array<{
+      command: string;
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+      duration: number;
+      timestamp: Date;
+    }> = [];
     
-    // Phase 4c: Execute terminal operations
-    if (terminalSteps.length > 0) {
-      console.log(`[Orchestrator] Executing ${terminalSteps.length} terminal operation(s)...`);
+    for (let i = 0; i < plan.steps.length; i++) {
+      const step = plan.steps[i];
+      const stepNum = i + 1;
       
-      chatSidebarProvider.updateMessage(planMessageId, {
-        content: planSummary + '\n\n⚡ Executing terminal commands...'
-      });
-      
-      if (!terminalManager || !terminalApprovalPanel) {
-        console.error('[Orchestrator] ❌ Terminal manager or approval panel not initialized!');
-        chatSidebarProvider.addMessage({
-          role: 'system',
-          content: '❌ Terminal execution unavailable. Please reload the extension.'
+      if (step.operation.type === 'terminal') {
+        // TERMINAL OPERATION
+        console.log(`[Orchestrator] Step ${stepNum}/${plan.steps.length}: TERMINAL ${step.filePath}`);
+        
+        chatSidebarProvider.updateMessage(planMessageId, {
+          content: planSummary + `\n\n⚡ Step ${stepNum}/${plan.steps.length}: ${step.operation.command}`
         });
-        return; // Critical failure - can't proceed without terminal support
-      }
-      
-      for (let i = 0; i < terminalSteps.length; i++) {
-        const step = terminalSteps[i];
-        console.log(`[Orchestrator] Processing terminal step ${i + 1}/${terminalSteps.length}: ${step.filePath}`);
+        
+        if (!terminalManager || !terminalApprovalPanel) {
+        console.error('[Orchestrator] ❌ Terminal manager or approval panel not initialized!');
+          chatSidebarProvider.addMessage({
+            role: 'system',
+            content: '❌ Terminal execution unavailable. Please reload the extension.'
+          });
+          return; // Critical failure - can't proceed without terminal support
+        }
+        
+        console.log(`[Orchestrator] Processing terminal step ${stepNum}/${plan.steps.length}: ${step.filePath}`);
         
         const command = step.operation.command || step.operation.content || '';
         if (!command) {
@@ -749,41 +721,82 @@ async function handleOrchestratorRequest(userRequest: string, mentionedFiles: st
             content: `⚠️ Cannot execute terminal command - terminal system not initialized`
           });
         }
-      }
-      
-      // Phase 4d: Verify terminal results and offer retry if needed
-      const terminalResults = (workspaceContext as any).terminalResults || [];
-      const failedCommands = terminalResults.filter((r: any) => r.exitCode !== 0);
-      
-      if (failedCommands.length > 0) {
-        console.log(`[Orchestrator] Detected ${failedCommands.length} failed terminal command(s)`);
+      } else {
+        // ========== FILE OPERATION ==========
+        console.log(`[Orchestrator] Step ${stepNum}/${plan.steps.length}: ${step.operation.type.toUpperCase()} ${step.filePath}`);
         
-        const retryMessageId = chatSidebarProvider.addMessage({
-          role: 'system',
-          content: `⚠️ **${failedCommands.length} terminal command(s) failed.**\n\n` +
-                   `The Orchestrator can analyze the errors and suggest fixes.\n\n` +
-                   `Failed commands:\n${failedCommands.map((c: any) => `- \`${c.command}\` (exit code ${c.exitCode})`).join('\n')}\n\n` +
-                   `Would you like me to analyze the errors and attempt to fix them?`,
-          metadata: {
-            retryData: {
-              originalRequest: userRequest,
-              originalPlan: plan,
-              terminalResults,
-              workspaceContext,
-              planMessageId
-            }
+        chatSidebarProvider.updateMessage(planMessageId, {
+          content: planSummary + `\n\n🔧 Step ${stepNum}/${plan.steps.length}: Generating ${step.filePath}...`
+        });
+        
+        try {
+          // Create a single-file plan for this step
+          const singleFilePlan = {
+            ...plan,
+            steps: [step],
+            affectedFiles: [step.filePath]
+          };
+          
+          const fileResults = await codeGenerator.generateCode(
+            singleFilePlan,
+            userRequest,
+            (event) => {
+              chatSidebarProvider?.updateMessage(planMessageId, {
+                content: planSummary + `\n\n🔧 Step ${stepNum}/${plan.steps.length}: ${event.status}`
+              });
+            },
+            true,  // applyImmediately
+            contextFiles
+          );
+          
+          generationResults.push(...fileResults);
+          console.log(`[Orchestrator] ✅ Generated ${step.filePath}`);
+          
+          chatSidebarProvider.updateMessage(planMessageId, {
+            content: planSummary + `\n\n✅ Step ${stepNum}/${plan.steps.length}: ${step.filePath} complete`
+          });
+        } catch (error) {
+          console.error(`[Orchestrator] ❌ Failed to generate ${step.filePath}:`, error);
+          chatSidebarProvider.addMessage({
+            role: 'system',
+            content: `❌ Failed to generate ${step.filePath}: ${error instanceof Error ? error.message : 'Unknown error'}`
+          });
+        }
+      }
+    }
+    
+    // Phase 4 Complete: Verify terminal results and offer retry if needed
+    const allTerminalResults = (workspaceContext as any).terminalResults || [];
+    const failedCommands = allTerminalResults.filter((r: any) => r.exitCode !== 0);
+      
+    if (failedCommands.length > 0) {
+      console.log(`[Orchestrator] Detected ${failedCommands.length} failed terminal command(s)`);
+      
+      const retryMessageId = chatSidebarProvider.addMessage({
+        role: 'system',
+        content: `⚠️ **${failedCommands.length} terminal command(s) failed.**\n\n` +
+                 `The Orchestrator can analyze the errors and suggest fixes.\n\n` +
+                 `Failed commands:\n${failedCommands.map((c: any) => `- \`${c.command}\` (exit code ${c.exitCode})`).join('\n')}\n\n` +
+                 `Would you like me to analyze the errors and attempt to fix them?`,
+        metadata: {
+          retryData: {
+            originalRequest: userRequest,
+            originalPlan: plan,
+            terminalResults: allTerminalResults,
+            workspaceContext,
+            planMessageId
           }
-        });
-        
-        // Interactive retry will be triggered by user clicking button
-        console.log(`[Orchestrator] Waiting for user decision on terminal retry (message: ${retryMessageId})...`);
-      } else if (terminalResults.length > 0) {
-        console.log(`[Orchestrator] All ${terminalResults.length} terminal command(s) succeeded`);
-        chatSidebarProvider.addMessage({
-          role: 'system',
-          content: `✅ All terminal commands completed successfully!`
-        });
-      }
+        }
+      });
+      
+      // Interactive retry will be triggered by user clicking button
+      console.log(`[Orchestrator] Waiting for user decision on terminal retry (message: ${retryMessageId})...`);
+    } else if (allTerminalResults.length > 0) {
+      console.log(`[Orchestrator] All ${allTerminalResults.length} terminal command(s) succeeded`);
+      chatSidebarProvider.addMessage({
+        role: 'system',
+        content: `✅ All terminal commands completed successfully!`
+      });
     }
 
     // Update plan with generated content
