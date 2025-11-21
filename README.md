@@ -79,7 +79,7 @@ This creates **near-zero hallucination rates** and ensures consistent quality.
 - **Symbol-level awareness** - Understands functions, classes, imports, dependencies
 
 ### Developer Experience
-- **Inline editing** - Edit code in place with AI assistance (Ctrl+K)
+- **Inline editing** - Edit code in place with AI assistance (Ctrl+L)
 - **Tab autocomplete** - Intelligent ghost text completions
 - **Multi-file operations** - AI can modify multiple files atomically
 - **Diff view** - Review AI changes before accepting
@@ -248,7 +248,7 @@ Understand *why* code is written a certain way through multi-perspective explana
 - ODAI synthesis cycle
 - N2 self-correction loop
 - [ ] OpenAI integration
-- [ ] Inline editing (Ctrl+K)
+- [ ] Inline editing (Ctrl+L)
 
 ### Phase 2: Core Features (Months 3-4)
 - [ ] All six agents implemented
