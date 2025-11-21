@@ -72,8 +72,8 @@ ${malformedYAML}
       const repairedYAML = extractYAML(response.content);
       console.log(`[YAML-Technician] Repaired YAML length: ${repairedYAML.length} chars`);
 
-      // Verify the repair worked
-      const testParse = parseYAML(repairedYAML);
+      // Verify the repair worked (with auto-repair enabled, in case LLM output needs minor fixes)
+      const testParse = parseYAML(repairedYAML, true);
       if (testParse.success) {
         console.log(`[YAML-Technician] ✅ Repair successful!`);
         return repairedYAML;
@@ -91,10 +91,9 @@ ${malformedYAML}
 /**
  * Parse YAML with automatic technician repair on failure
  * 
- * Three-tier strategy:
- * 1. Try direct parse
- * 2. Try basic cleanup + parse
- * 3. Call YAML Technician for LLM-powered repair
+ * Two-tier strategy:
+ * 1. Try parse with auto-repair (covers most cases)
+ * 2. Call YAML Technician for LLM-powered repair (last resort)
  */
 export async function parseYAMLWithTechnician<T>(
   text: string,
@@ -105,38 +104,28 @@ export async function parseYAMLWithTechnician<T>(
 ): Promise<T> {
   console.log(`[YAML-Parse] Attempting to parse YAML for: ${context}`);
   
-  // Tier 1: Direct parse
-  console.log(`[YAML-Parse] Tier 1: Direct parse...`);
-  const directParse = parseYAML<T>(text);
-  if (directParse.success) {
-    console.log(`[YAML-Parse] ✅ Tier 1 success - direct parse worked`);
-    return directParse.data;
+  // Tier 1: Parse with intelligent auto-repair
+  console.log(`[YAML-Parse] Tier 1: Parse with auto-repair...`);
+  const autoParse = parseYAML<T>(text, true);
+  if (autoParse.success) {
+    console.log(`[YAML-Parse] ✅ Tier 1 success - auto-repair handled it`);
+    return autoParse.data;
   }
-  console.log(`[YAML-Parse] ❌ Tier 1 failed:`, directParse.error);
+  console.log(`[YAML-Parse] ❌ Tier 1 failed:`, autoParse.error);
   
-  // Tier 2: Basic cleanup + parse
-  console.log(`[YAML-Parse] Tier 2: Basic cleanup + parse...`);
-  const cleaned = repairYAML(text);
-  const cleanedParse = parseYAML<T>(cleaned);
-  if (cleanedParse.success) {
-    console.log(`[YAML-Parse] ✅ Tier 2 success - cleanup fixed it`);
-    return cleanedParse.data;
-  }
-  console.log(`[YAML-Parse] ❌ Tier 2 failed:`, cleanedParse.error);
-  
-  // Tier 3: LLM-powered YAML Technician
-  console.log(`[YAML-Parse] Tier 3: Calling YAML Technician...`);
+  // Tier 2: LLM-powered YAML Technician (last resort)
+  console.log(`[YAML-Parse] Tier 2: Calling YAML Technician...`);
   const technician = new YAMLTechnician(llmProvider, config);
   
   try {
     const repaired = await technician.repairYAML(text, context, expectedStructure);
-    const repairedParse = parseYAML<T>(repaired);
+    const repairedParse = parseYAML<T>(repaired, true);
     
     if (repairedParse.success) {
-      console.log(`[YAML-Parse] ✅ Tier 3 success - YAML Technician fixed it!`);
+      console.log(`[YAML-Parse] ✅ Tier 2 success - YAML Technician fixed it!`);
       return repairedParse.data;
     } else {
-      console.error(`[YAML-Parse] ❌ Tier 3 failed - even after technician repair:`, repairedParse.error);
+      console.error(`[YAML-Parse] ❌ Tier 2 failed - even after technician repair:`, repairedParse.error);
       throw new Error(`YAML parsing failed even after technician repair: ${repairedParse.error}`);
     }
   } catch (error) {
