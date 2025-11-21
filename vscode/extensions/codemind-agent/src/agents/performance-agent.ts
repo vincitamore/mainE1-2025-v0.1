@@ -55,52 +55,36 @@ IMPORTANT - RELEVANCE SCORING:
 
 Be honest about relevance. If the task isn't performance-critical, it's OK to have lower relevance.
 
-Return JSON with this EXACT structure:
-\`\`\`json
-{
-  "insights": [
-    "Key performance observation 1",
-    "Key performance observation 2",
-    "Key performance observation 3"
-  ],
-  "issues": {
-    "critical": [
-      {
-        "type": "n_plus_one",
-        "line": 20,
-        "description": "Loop makes N database queries instead of 1",
-        "fix": "Use a single query with JOIN or use Promise.all()",
-        "impact": "O(N) database queries - severe performance degradation at scale"
-      }
-    ],
-    "warnings": [
-      {
-        "type": "inefficient_algorithm",
-        "line": 35,
-        "description": "Nested loop creates O(n²) complexity",
-        "fix": "Use hash map for O(n) lookup instead of nested loop",
-        "impact": "Slow for large datasets (1000+ items)"
-      }
-    ],
-    "suggestions": [
-      {
-        "type": "caching",
-        "description": "Repeated expensive computation with same input",
-        "fix": "Add memoization or cache results",
-        "impact": "Would reduce redundant calculations"
-      }
-    ]
-  },
-  "recommendations": [
-    "Optimize database queries to reduce round trips",
-    "Use caching for frequently accessed data",
-    "Replace O(n²) algorithms with O(n) or O(n log n)",
-    "Use connection pooling for database access"
-  ],
-  "confidence": 0.88,
-  "relevance": 0.75
-}
-\`\`\`
+Output Format: YAML (2-space indentation, no code fences)
+
+Structure:
+insights:
+  - Key performance observation 1
+  - Key performance observation 2
+issues:
+  critical:
+    - type: n_plus_one
+      line: 20
+      description: Loop makes N database queries instead of 1
+      fix: Use a single query with JOIN or use Promise.all()
+      impact: O(N) database queries - severe performance degradation at scale
+  warnings:
+    - type: inefficient_algorithm
+      line: 35
+      description: Nested loop creates O(n²) complexity
+      fix: Use hash map for O(n) lookup instead of nested loop
+      impact: Slow for large datasets
+  suggestions:
+    - type: caching
+      description: Repeated expensive computation with same input
+      fix: Add memoization or cache results
+      impact: Would reduce redundant calculations
+recommendations:
+  - Optimize database queries to reduce round trips
+  - Use caching for frequently accessed data
+  - Replace O(n²) algorithms with O(n) or O(n log n)
+confidence: 0.88
+relevance: 0.75
 
 Think about scalability. Consider Big O complexity. Focus on bottlenecks.`;
   }

@@ -55,54 +55,38 @@ IMPORTANT - RELEVANCE SCORING:
 
 Be honest about relevance. Your input is valuable for all tasks, but rate honestly how critical it is.
 
-Return JSON with this EXACT structure:
-\`\`\`json
-{
-  "insights": [
-    "Key documentation observation 1",
-    "Key documentation observation 2",
-    "Key documentation observation 3"
-  ],
-  "issues": {
-    "critical": [
-      {
-        "type": "unclear_naming",
-        "line": 15,
-        "description": "Variable 'x' has no meaning - unclear purpose",
-        "fix": "Rename to 'userValidationResult' or 'isUserValid'",
-        "impact": "Code is hard to understand without context"
-      }
-    ],
-    "warnings": [
-      {
-        "type": "missing_docs",
-        "line": 5,
-        "description": "Public API method lacks documentation",
-        "fix": "Add JSDoc with @param, @returns, @throws, and example",
-        "impact": "Users won't know how to use this function"
-      }
-    ],
-    "suggestions": [
-      {
-        "type": "complex_logic",
-        "line": 30,
-        "description": "Complex regex without explanation",
-        "fix": "Add comment explaining what pattern matches",
-        "impact": "Maintainers will struggle to understand intent"
-      }
-    ]
-  },
-  "recommendations": [
-    "Use descriptive variable and function names",
-    "Add JSDoc comments for public APIs",
-    "Explain complex algorithms and regex patterns",
-    "Remove obvious comments, keep non-obvious ones",
-    "Add type annotations for better code understanding"
-  ],
-  "confidence": 0.90,
-  "relevance": 0.85
-}
-\`\`\`
+Output Format: YAML (2-space indentation, no code fences)
+
+Structure:
+insights:
+  - Key documentation observation 1
+  - Key documentation observation 2
+issues:
+  critical:
+    - type: unclear_naming
+      line: 15
+      description: Variable 'x' has no meaning - unclear purpose
+      fix: Rename to 'userValidationResult' or 'isUserValid'
+      impact: Code is hard to understand without context
+  warnings:
+    - type: missing_docs
+      line: 5
+      description: Public API method lacks documentation
+      fix: Add JSDoc with @param, @returns, @throws, and example
+      impact: Users won't know how to use this function
+  suggestions:
+    - type: complex_logic
+      line: 30
+      description: Complex regex without explanation
+      fix: Add comment explaining what pattern matches
+      impact: Maintainers will struggle to understand intent
+recommendations:
+  - Use descriptive variable and function names
+  - Add JSDoc comments for public APIs
+  - Explain complex algorithms and regex patterns
+  - Remove obvious comments, keep non-obvious ones
+confidence: 0.90
+relevance: 0.85
 
 Think like a new team member reading the code. Focus on understandability.`;
   }

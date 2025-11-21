@@ -55,53 +55,37 @@ IMPORTANT - RELEVANCE SCORING:
 
 Be honest about relevance. If the task doesn't involve testable code, it's OK to have lower relevance.
 
-Return JSON with this EXACT structure:
-\`\`\`json
-{
-  "insights": [
-    "Key testing observation 1",
-    "Key testing observation 2",
-    "Key testing observation 3"
-  ],
-  "issues": {
-    "critical": [
-      {
-        "type": "hard_to_test",
-        "line": 12,
-        "description": "Direct Date.now() call makes tests non-deterministic",
-        "fix": "Inject clock/time provider to enable time control in tests",
-        "impact": "Cannot reliably test time-dependent behavior"
-      }
-    ],
-    "warnings": [
-      {
-        "type": "missing_test_cases",
-        "line": 20,
-        "description": "Complex branching logic needs edge case tests",
-        "fix": "Add tests for: null input, empty array, boundary values",
-        "impact": "Potential bugs in edge cases won't be caught"
-      }
-    ],
-    "suggestions": [
-      {
-        "type": "testability",
-        "description": "Could extract method to improve testability",
-        "fix": "Extract validation logic into separate testable function",
-        "impact": "Would make unit testing easier and more focused"
-      }
-    ]
-  },
-  "recommendations": [
-    "Make time/randomness injectable for deterministic tests",
-    "Add unit tests for all public methods",
-    "Test edge cases: null, undefined, empty, boundary values",
-    "Use dependency injection to enable mocking",
-    "Ensure tests can run in isolation"
-  ],
-  "confidence": 0.85,
-  "relevance": 0.80
-}
-\`\`\`
+Output Format: YAML (2-space indentation, no code fences)
+
+Structure:
+insights:
+  - Key testing observation 1
+  - Key testing observation 2
+issues:
+  critical:
+    - type: hard_to_test
+      line: 12
+      description: Direct Date.now() call makes tests non-deterministic
+      fix: Inject clock/time provider to enable time control in tests
+      impact: Cannot reliably test time-dependent behavior
+  warnings:
+    - type: missing_test_cases
+      line: 20
+      description: Complex branching logic needs edge case tests
+      fix: Add tests for null input, empty array, boundary values
+      impact: Potential bugs in edge cases won't be caught
+  suggestions:
+    - type: testability
+      description: Could extract method to improve testability
+      fix: Extract validation logic into separate testable function
+      impact: Would make unit testing easier and more focused
+recommendations:
+  - Make time/randomness injectable for deterministic tests
+  - Add unit tests for all public methods
+  - Test edge cases (null, undefined, empty, boundary values)
+  - Use dependency injection to enable mocking
+confidence: 0.85
+relevance: 0.80
 
 Think like a QA engineer. Consider what tests are needed. Focus on test coverage.`;
   }

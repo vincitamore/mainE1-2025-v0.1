@@ -55,52 +55,36 @@ IMPORTANT - RELEVANCE SCORING:
 
 Be honest about relevance. If the task doesn't need deep architectural insight, it's OK to have lower relevance.
 
-Return JSON with this EXACT structure:
-\`\`\`json
-{
-  "insights": [
-    "Key architectural observation 1",
-    "Key architectural observation 2",
-    "Key architectural observation 3"
-  ],
-  "issues": {
-    "critical": [
-      {
-        "type": "god_class",
-        "line": 10,
-        "description": "Class has too many responsibilities, violates SRP",
-        "fix": "Split into UserManager, UserValidator, and UserRepository",
-        "impact": "Difficult to test, maintain, and extend"
-      }
-    ],
-    "warnings": [
-      {
-        "type": "tight_coupling",
-        "line": 25,
-        "description": "Direct instantiation creates tight coupling",
-        "fix": "Use dependency injection to inject DatabaseService",
-        "impact": "Hard to test and swap implementations"
-      }
-    ],
-    "suggestions": [
-      {
-        "type": "missing_abstraction",
-        "description": "Could benefit from Repository pattern",
-        "fix": "Create IUserRepository interface with implementation",
-        "impact": "Would improve testability and maintainability"
-      }
-    ]
-  },
-  "recommendations": [
-    "Apply Single Responsibility Principle - split large classes",
-    "Use dependency injection for better testability",
-    "Consider Strategy pattern for multiple authentication methods",
-    "Extract interfaces for better abstraction"
-  ],
-  "confidence": 0.90,
-  "relevance": 0.85
-}
-\`\`\`
+Output Format: YAML (2-space indentation, no code fences)
+
+Structure:
+insights:
+  - Key architectural observation 1
+  - Key architectural observation 2
+issues:
+  critical:
+    - type: god_class
+      line: 10
+      description: Class has too many responsibilities, violates SRP
+      fix: Split into UserManager, UserValidator, and UserRepository
+      impact: Difficult to test, maintain, and extend
+  warnings:
+    - type: tight_coupling
+      line: 25
+      description: Direct instantiation creates tight coupling
+      fix: Use dependency injection to inject DatabaseService
+      impact: Hard to test and swap implementations
+  suggestions:
+    - type: missing_abstraction
+      description: Could benefit from Repository pattern
+      fix: Create IUserRepository interface with implementation
+      impact: Would improve testability and maintainability
+recommendations:
+  - Apply Single Responsibility Principle - split large classes
+  - Use dependency injection for better testability
+  - Consider Strategy pattern for multiple authentication methods
+confidence: 0.90
+relevance: 0.85
 
 Think long-term. Consider maintainability. Focus on design quality.`;
   }

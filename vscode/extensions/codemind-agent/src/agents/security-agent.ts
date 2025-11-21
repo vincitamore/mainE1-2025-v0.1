@@ -55,52 +55,36 @@ IMPORTANT - RELEVANCE SCORING:
 
 Be honest about relevance. If the task has minimal security implications, it's OK to have lower relevance.
 
-Return JSON with this EXACT structure:
-\`\`\`json
-{
-  "insights": [
-    "Key security observation 1",
-    "Key security observation 2",
-    "Key security observation 3"
-  ],
-  "issues": {
-    "critical": [
-      {
-        "type": "sql_injection",
-        "line": 42,
-        "description": "User input concatenated directly into SQL query",
-        "fix": "Use parameterized queries or prepared statements",
-        "impact": "Allows attacker to execute arbitrary SQL commands"
-      }
-    ],
-    "warnings": [
-      {
-        "type": "weak_crypto",
-        "line": 15,
-        "description": "Using MD5 for password hashing",
-        "fix": "Use bcrypt, argon2, or scrypt for password hashing",
-        "impact": "Passwords vulnerable to rainbow table attacks"
-      }
-    ],
-    "suggestions": [
-      {
-        "type": "rate_limiting",
-        "description": "No rate limiting on authentication endpoint",
-        "fix": "Add rate limiting middleware (e.g., express-rate-limit)",
-        "impact": "Vulnerable to brute force attacks"
-      }
-    ]
-  },
-  "recommendations": [
-    "Use parameterized queries for all database access",
-    "Implement rate limiting on authentication endpoints",
-    "Add CSRF tokens to state-changing operations",
-    "Sanitize all user inputs before processing"
-  ],
-  "confidence": 0.95,
-  "relevance": 0.90
-}
-\`\`\`
+Output Format: YAML (2-space indentation, no code fences)
+
+Structure:
+insights:
+  - Key security observation 1
+  - Key security observation 2
+issues:
+  critical:
+    - type: sql_injection
+      line: 42
+      description: User input concatenated directly into SQL query
+      fix: Use parameterized queries or prepared statements
+      impact: Allows attacker to execute arbitrary SQL commands
+  warnings:
+    - type: weak_crypto
+      line: 15
+      description: Using MD5 for password hashing
+      fix: Use bcrypt, argon2, or scrypt for password hashing
+      impact: Passwords vulnerable to rainbow table attacks
+  suggestions:
+    - type: rate_limiting
+      description: No rate limiting on authentication endpoint
+      fix: Add rate limiting middleware
+      impact: Vulnerable to brute force attacks
+recommendations:
+  - Use parameterized queries for all database access
+  - Implement rate limiting on authentication endpoints
+  - Add CSRF tokens to state-changing operations
+confidence: 0.95
+relevance: 0.90
 
 Be specific. Reference line numbers when possible. Provide actionable fixes. Think like a security auditor.`;
   }

@@ -6,9 +6,7 @@
  */
 
 import { LLMProvider, LLMConfig, LLMMessage } from '../llm/provider';
-import { extractJSON } from '../utils/text-extraction';
-import { JSON_OUTPUT_INSTRUCTIONS } from './prompt-templates';
-import { safeJSONParse, getJSONError } from '../utils/json-repair';
+import { parseYAML, extractYAML } from '../utils/yaml-parser';
 import { TaskType, getTaskGuidance, getExpectedRelevance } from '../utils/task-classifier';
 
 export enum AgentRole {
@@ -108,18 +106,15 @@ export abstract class Agent {
     // Build agent-specific prompt
     const prompt = this.buildPrompt(request, context, taskType, taskGuidance, repairDirective);
     
-    // Add standard JSON formatting instructions
-    const fullPrompt = prompt + '\n\n' + JSON_OUTPUT_INSTRUCTIONS;
-    
     const response = await this.llmProvider.generate(
       [
         {
           role: 'system',
-          content: `You are an expert ${this.role} agent. Your perspective: ${this.perspective}. Always return valid JSON without markdown formatting.`
+          content: `You are an expert ${this.role} agent. Your perspective: ${this.perspective}. Output Format: YAML (2-space indentation, no code fences).`
         },
         {
           role: 'user',
-          content: fullPrompt
+          content: prompt
         }
       ],
       this.config
@@ -253,17 +248,16 @@ export abstract class Agent {
   /**
    * Parse LLM response into structured AgentAnalysis
    */
-  // Make parseResponse public so N2Controller can call it after JSON Technician repair
+  // Make parseResponse public so N2Controller can call it after YAML Technician repair
   public parseResponse(response: string, expectedRelevance: number): AgentAnalysis {
-    const jsonStr = extractJSON(response);
+    const yamlStr = extractYAML(response);
     
-    // Use safe JSON parser with multiple fallback strategies
-    // Pass agent role for better debugging
-    const parsed = safeJSONParse<any>(jsonStr, null, this.role);
+    // Parse YAML (more forgiving than JSON!)
+    const result = parseYAML<any>(yamlStr);
     
-    if (parsed && typeof parsed === 'object') {
+    if (result.success && result.data && typeof result.data === 'object') {
       // Validate and provide defaults for required fields
-      const validated = this.validateAndRepairAnalysis(parsed, expectedRelevance);
+      const validated = this.validateAndRepairAnalysis(result.data, expectedRelevance);
       
       return {
         agent: this.role,
@@ -277,8 +271,7 @@ export abstract class Agent {
     }
     
     // Absolute fallback if all parsing attempts failed
-    console.warn(`[${this.role}] All JSON parsing attempts failed`);
-    console.warn(getJSONError(jsonStr));
+    console.warn(`[${this.role}] YAML parsing failed:`, !result.success ? result.error : 'Unknown error');
     
     return {
       agent: this.role,

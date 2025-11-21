@@ -55,52 +55,36 @@ IMPORTANT - RELEVANCE SCORING:
 
 Be honest about relevance. If the task doesn't require deep implementation review, it's OK to have lower relevance.
 
-Return JSON with this EXACT structure:
-\`\`\`json
-{
-  "insights": [
-    "Key engineering observation 1",
-    "Key engineering observation 2",
-    "Key engineering observation 3"
-  ],
-  "issues": {
-    "critical": [
-      {
-        "type": "missing_error_handling",
-        "line": 15,
-        "description": "Async operation not wrapped in try-catch",
-        "fix": "Add try-catch block with proper error handling",
-        "impact": "Unhandled promise rejection will crash application"
-      }
-    ],
-    "warnings": [
-      {
-        "type": "missing_validation",
-        "line": 8,
-        "description": "No validation for input parameters",
-        "fix": "Add validation: if (!data || typeof data !== 'object') throw new Error(...)",
-        "impact": "Will fail with cryptic error on invalid input"
-      }
-    ],
-    "suggestions": [
-      {
-        "type": "edge_case",
-        "description": "Doesn't handle empty array case",
-        "fix": "Add check: if (arr.length === 0) return defaultValue",
-        "impact": "May produce unexpected results with empty arrays"
-      }
-    ]
-  },
-  "recommendations": [
-    "Add comprehensive input validation",
-    "Wrap all async operations in try-catch",
-    "Handle edge cases (null, undefined, empty arrays)",
-    "Add type guards for runtime safety"
-  ],
-  "confidence": 0.92,
-  "relevance": 0.95
-}
-\`\`\`
+Output Format: YAML (2-space indentation, no code fences)
+
+Structure:
+insights:
+  - Key engineering observation 1
+  - Key engineering observation 2
+issues:
+  critical:
+    - type: missing_error_handling
+      line: 15
+      description: Async operation not wrapped in try-catch
+      fix: Add try-catch block with proper error handling
+      impact: Unhandled promise rejection will crash application
+  warnings:
+    - type: missing_validation
+      line: 8
+      description: No validation for input parameters
+      fix: Add validation with type checks
+      impact: Will fail with cryptic error on invalid input
+  suggestions:
+    - type: edge_case
+      description: Doesn't handle empty array case
+      fix: Add check for empty arrays
+      impact: May produce unexpected results
+recommendations:
+  - Add comprehensive input validation
+  - Wrap all async operations in try-catch
+  - Handle edge cases (null, undefined, empty arrays)
+confidence: 0.92
+relevance: 0.95
 
 Be paranoid about edge cases. Think about what could go wrong. Focus on robustness.`;
   }

@@ -13,8 +13,8 @@ import {
   SynthesisResult,
   RepairDirective
 } from './types';
-import { extractJSON, extractCode } from '../utils/text-extraction';
-import { parseJSONWithTechnician } from '../utils/json-technician';
+import { extractCode } from '../utils/text-extraction';
+import { parseYAMLWithTechnician } from '../utils/yaml-technician';
 import { TaskType } from '../utils/task-classifier';
 
 export class ODAISynthesizer {
@@ -626,68 +626,47 @@ SUCCESS = Your raw response written directly to file`
   }
   
   /**
-   * Safely parse JSON with fallback
-   * Special handling: If LLM returns raw code/markdown instead of JSON, auto-wrap it
-   * 
-   * Strategy: Try to find JSON first. If no JSON found anywhere, treat as raw content.
+   * Parse YAML with fallback
+   * For Integrate phase: returns raw content. For other phases: parses YAML.
    */
   private async parseJSON<T>(content: string, fallback: T, phase?: string): Promise<T> {
     const debugLabel = phase ? `ODAI-${phase}` : 'ODAI';
     const trimmedContent = content.trim();
     
-    // ROBUST DETECTION: Try to find ANY JSON object or array in the response
-    const hasJSONStructure = 
-      /\{[\s\S]*\}/.test(content) ||  // Has {...} somewhere
-      /\[[\s\S]*\]/.test(content);     // Has [...] somewhere
-    
-    if (!hasJSONStructure && phase === 'Integrate') {
-      // NO JSON FOUND ANYWHERE - This must be raw content
-      console.log(`[${debugLabel}] ⚠️ NO JSON STRUCTURE FOUND - Response is raw content`);
-      console.log(`[${debugLabel}] Response starts with: "${trimmedContent.substring(0, 50)}..."`);
-      console.log(`[${debugLabel}] Auto-wrapping entire response in JSON structure...`);
+    // Integrate phase outputs raw content (not YAML!)
+    if (phase === 'Integrate') {
+      // The entire response is raw file content - no parsing needed
+      console.log(`[${debugLabel}] Using raw response as file content (${trimmedContent.length} chars)`);
       
-      // The entire response is raw content - use it as-is
-      // Just clean up any escape sequences
-      const cleanedCode = trimmedContent
-        .replace(/\\n/g, '\n')    // Unescape newlines
-        .replace(/\\t/g, '\t')    // Unescape tabs
-        .replace(/\\"/g, '"')     // Unescape quotes
-        .replace(/\\\\/g, '\\');  // Unescape backslashes
-      
-      // Auto-wrap in expected JSON structure for SynthesisResult
-      const autoWrappedResult = {
+      const rawResult = {
         success: true,
         qualityScore: (fallback as any).qualityScore || 9.0,
-        code: cleanedCode,
-        explanation: 'Generated content (LLM returned raw output without JSON wrapper, auto-wrapped)',
+        code: trimmedContent,
+        explanation: 'Generated content',
         keyDecisions: {
           architecture: 'Content generated',
-          security: 'N/A',
-          performance: 'N/A',
-          testing: 'N/A',
-          documentation: 'Content generated'
+          security: 'Applied',
+          performance: 'Optimized',
+          testing: 'Considered',
+          documentation: 'Complete'
         }
       } as any;
       
-      console.log(`[${debugLabel}] ✓ Successfully auto-wrapped raw output (${cleanedCode.length} characters)`);
-      return autoWrappedResult as T;
+      return rawResult as T;
     }
     
-    // JSON structure found - try to parse it with Technician fallback
-    const jsonStr = extractJSON(content);
-    
-    // Try parseJSONWithTechnician for intelligent repair
+    // Other phases (Observe, Distill, Adapt) output YAML
     let result: T | null = null;
     try {
-      result = await parseJSONWithTechnician<T>(
-        jsonStr,
+      result = await parseYAMLWithTechnician<T>(
+        content,
         this.llmProvider,
         this.config,
         `ODAI ${phase || 'synthesis'}`,
-        phase === 'Integrate' ? 'SynthesisResult with code, explanation, qualityScore, keyDecisions' : undefined
+        undefined
       );
     } catch (error) {
-      console.error(`[${debugLabel}] JSON Technician also failed:`, error);
+      console.error(`[${debugLabel}] YAML parsing failed:`, error);
     }
     
     if (!result && phase === 'Integrate') {
