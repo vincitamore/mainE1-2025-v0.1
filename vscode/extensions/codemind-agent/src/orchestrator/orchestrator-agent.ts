@@ -12,7 +12,7 @@
 import { LLMProvider, LLMConfig } from '../llm/provider';
 import { Agent, AgentAnalysis, CodeContext } from '../agents/agent';
 import { extractJSON } from '../utils/text-extraction';
-import { safeJSONParseWithRepair } from '../utils/json-repair-advanced';
+import { parseJSONWithTechnician } from '../utils/json-technician';
 import {
   OrchestratorTaskType,
   ExecutionPlan,
@@ -85,7 +85,19 @@ JSON WILL BE PARSED BY JSON.parse() - if it's malformed, the entire operation fa
     );
 
     const jsonStr = extractJSON(response.content);
-    const parsed = safeJSONParseWithRepair<any>(jsonStr, null, 'orchestrator-analysis');
+    const parsed = await parseJSONWithTechnician<any>(
+      jsonStr,
+      this.llmProvider,
+      this.config,
+      'task analysis',
+      `{
+  "taskType": "code_generation" | "refactoring" | "bug_fix" | etc.,
+  "intent": "brief description",
+  "scope": "single-file" | "multi-file" | "project-wide",
+  "requiredContext": ["file paths or patterns"],
+  "complexity": "low" | "medium" | "high"
+}`
+    );
 
     if (parsed && typeof parsed === 'object') {
       return {
@@ -171,7 +183,33 @@ Your JSON will be parsed by JSON.parse() - if it fails, the entire operation fai
     );
 
     const jsonStr = extractJSON(response.content);
-    const parsed = safeJSONParseWithRepair<any>(jsonStr, null, 'orchestrator-planning');
+    const parsed = await parseJSONWithTechnician<any>(
+      jsonStr,
+      this.llmProvider,
+      this.config,
+      'execution plan',
+      `{
+  "taskType": "operation type",
+  "summary": "brief description",
+  "steps": [
+    {
+      "filePath": "path/to/file",
+      "operation": {
+        "type": "create" | "modify" | "delete" | "rename",
+        "filePath": "same as parent",
+        "content": "brief placeholder - NOT full code",
+        "reason": "why this operation"
+      },
+      "priority": 1,
+      "rationale": "detailed explanation",
+      "risks": ["potential issues"]
+    }
+  ],
+  "affectedFiles": ["list of file paths"],
+  "estimatedComplexity": "low" | "medium" | "high",
+  "confidence": 0.85
+}`
+    );
 
     if (parsed && typeof parsed === 'object') {
       return this.validateAndRepairPlan(parsed, taskAnalysis, workspaceContext);
