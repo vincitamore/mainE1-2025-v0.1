@@ -85,14 +85,20 @@ export class CodeGenerator {
             const path = require('path');
             const fs = require('fs').promises;
             
+            // Convert workspace-relative path to absolute
+            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+            const absolutePath = path.isAbsolute(result.filePath)
+              ? result.filePath
+              : path.join(workspaceRoot, result.filePath);
+            
             // Ensure directory exists
-            const dir = path.dirname(result.filePath);
+            const dir = path.dirname(absolutePath);
             await fs.mkdir(dir, { recursive: true });
             
             // Write file
-            await fs.writeFile(result.filePath, result.generatedContent, 'utf8');
+            await fs.writeFile(absolutePath, result.generatedContent, 'utf8');
             
-            console.log(`[CodeGenerator] ✅ Immediately applied: ${result.filePath}`);
+            console.log(`[CodeGenerator] ✅ Immediately applied: ${result.filePath} → ${absolutePath}`);
             
             progressCallback?.({
               phase: 'generating',

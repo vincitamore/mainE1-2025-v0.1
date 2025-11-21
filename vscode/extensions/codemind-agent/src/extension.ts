@@ -449,7 +449,8 @@ async function handleOrchestratorRequest(userRequest: string, context: vscode.Ex
         chatSidebarProvider?.updateMessage(planMessageId, {
           content: planSummary + `\n\n${event.status} (${event.progress}%)`
         });
-      }
+      },
+      true  // applyImmediately - write files as soon as they're generated!
     );
 
     // Update plan with generated content
