@@ -611,7 +611,11 @@ confidence: 0.85
               reason: step.operation.reason || 'User requested change',
               dependencies: Array.isArray(step.operation.dependencies) 
                 ? step.operation.dependencies.map((d: string) => this.normalizeFilePath(d, workspaceContext))
-                : []
+                : [],
+              // Terminal operation fields
+              command: step.operation.command,
+              workingDirectory: step.operation.workingDirectory,
+              requiresApproval: step.operation.requiresApproval !== false // Default to true
             },
             priority: typeof step.priority === 'number' ? step.priority : index + 1,
             rationale: step.rationale || step.operation.reason || 'Required for user request',
@@ -624,8 +628,12 @@ confidence: 0.85
     // Sort steps by priority
     plan.steps.sort((a, b) => a.priority - b.priority);
 
-    // Ensure affectedFiles includes all step file paths
-    const stepFiles = new Set(plan.steps.map((s: any) => s.filePath));
+    // Ensure affectedFiles includes all step file paths (except terminal operations)
+    const stepFiles = new Set(
+      plan.steps
+        .filter((s: any) => s.operation.type !== 'terminal')
+        .map((s: any) => s.filePath)
+    );
     stepFiles.forEach((file: string) => {
       if (!plan.affectedFiles.includes(file)) {
         plan.affectedFiles.push(file);

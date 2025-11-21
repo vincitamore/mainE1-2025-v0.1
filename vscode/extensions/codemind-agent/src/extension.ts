@@ -516,9 +516,9 @@ async function handleOrchestratorRequest(userRequest: string, mentionedFiles: st
     const filesToLoad = [...new Set([
       ...(plan.requiredFiles || []),
       ...plan.affectedFiles.filter(f => {
-        // Only load existing files, not ones we're creating
+        // Only load existing files, not ones we're creating or terminal operations
         const step = plan.steps.find(s => s.filePath === f);
-        return step?.operation.type !== 'create';
+        return step?.operation.type !== 'create' && step?.operation.type !== 'terminal';
       })
     ])];
 
