@@ -354,27 +354,50 @@ async function handleOrchestratorRequest(userRequest: string, mentionedFiles: st
       
       for (const mentionedPath of mentionedFiles) {
         try {
-          const absolutePath = path.isAbsolute(mentionedPath)
-            ? mentionedPath
-            : path.join(workspaceRoot, mentionedPath);
+          let absolutePath: string;
+          
+          // If it's already an absolute path or contains path separators, use it directly
+          if (path.isAbsolute(mentionedPath) || mentionedPath.includes('/') || mentionedPath.includes('\\')) {
+            absolutePath = path.isAbsolute(mentionedPath)
+              ? mentionedPath
+              : path.join(workspaceRoot, mentionedPath);
+          } else {
+            // It's just a filename - search the workspace for it
+            console.log(`[CodeMind] Searching workspace for file: ${mentionedPath}`);
+            const foundFiles = await vscode.workspace.findFiles(`**/${mentionedPath}`, '**/node_modules/**', 10);
+            
+            if (foundFiles.length === 0) {
+              throw new Error(`File not found: ${mentionedPath}`);
+            }
+            
+            if (foundFiles.length > 1) {
+              console.warn(`[CodeMind] Multiple files found for ${mentionedPath}, using first: ${foundFiles[0].fsPath}`);
+            }
+            
+            absolutePath = foundFiles[0].fsPath;
+            console.log(`[CodeMind] Found file at: ${absolutePath}`);
+          }
           
           const uri = vscode.Uri.file(absolutePath);
           const document = await vscode.workspace.openTextDocument(uri);
           const language = document.languageId;
           const content = document.getText();
           
+          // Use workspace-relative path for display
+          const relativePath = path.relative(workspaceRoot, absolutePath);
+          
           loadedFiles.push({
-            path: mentionedPath,
+            path: relativePath,
             content,
             language
           });
           
-          console.log(`[CodeMind] Loaded mentioned file: ${mentionedPath}`);
+          console.log(`[CodeMind] Loaded mentioned file: ${relativePath}`);
         } catch (error) {
           console.error(`[CodeMind] Failed to load mentioned file ${mentionedPath}:`, error);
           chatSidebarProvider.addMessage({
             role: 'system',
-            content: `⚠️ Could not load @${mentionedPath}`
+            content: `⚠️ Could not load @${mentionedPath}: ${error instanceof Error ? error.message : 'File not found'}`
           });
         }
       }
