@@ -221,10 +221,11 @@ export class N2Controller {
       totalAgents: agents.length
     });
     
-    const analyses = await Promise.all(
+    // Execute agents in parallel and collect both results and raw responses
+    const agentResults = await Promise.all(
       agents.map(async (agent, index) => {
         const agentRepairDirective = repairDirective?.agentSpecific?.[agent.role];
-        const analysis = await agent.analyze(
+        const result = await agent.analyzeWithRawResponse(
           request,
           context,
           taskType,
@@ -232,7 +233,7 @@ export class N2Controller {
         );
         
         // Report individual agent completion with detailed info
-        const issueCount = analysis.issues.critical.length + analysis.issues.warnings.length;
+        const issueCount = result.analysis.issues.critical.length + result.analysis.issues.warnings.length;
         progressCallback?.({
           type: 'agent_complete',
           iteration: iterationNum,
@@ -240,14 +241,70 @@ export class N2Controller {
           agentIndex: index + 1,
           totalAgents: agents.length,
           elapsed: Date.now() - agentStart,
-          confidence: analysis.confidence,
-          insights: analysis.insights.slice(0, 2), // First 2 insights
+          confidence: result.analysis.confidence,
+          insights: result.analysis.insights.slice(0, 2), // First 2 insights
           issueCount: issueCount
         });
         
-        return analysis;
+        return { agent, result };
       })
     );
+    
+    // Check for failed JSON parses and repair them in parallel using JSON Technician
+    const failedAgents = agentResults.filter(({ result }) => result.parseFailed);
+    
+    if (failedAgents.length > 0) {
+      console.log(`[N²] ${failedAgents.length} agent(s) had JSON parse failures, repairing with JSON Technician...`);
+      
+      const { JSONTechnician } = await import('../utils/json-technician');
+      const llmProvider = (agents[0] as any).llmProvider; // Get LLM provider from any agent
+      const llmConfig = (agents[0] as any).config;
+      const technician = new JSONTechnician(llmProvider, llmConfig);
+      
+      // Repair all failed responses in parallel
+      const repairs = await Promise.all(
+        failedAgents.map(async ({ agent, result }) => {
+          try {
+            console.log(`[N²] Repairing ${agent.role} response with JSON Technician...`);
+            const repaired = await technician.repairJSON(
+              result.rawResponse,
+              `${agent.role} agent analysis`,
+              `{
+  "insights": ["insight1", "insight2"],
+  "issues": {
+    "critical": [],
+    "warnings": [],
+    "suggestions": []
+  },
+  "recommendations": ["rec1", "rec2"],
+  "confidence": 0.85,
+  "relevance": 0.9
+}`
+            );
+            
+            // Re-parse with the repaired JSON
+            const reparsed = (agent as any).parseResponse(repaired, result.analysis.relevance);
+            console.log(`[N²] ✓ Successfully repaired ${agent.role} response`);
+            return { agent, analysis: reparsed };
+          } catch (error) {
+            console.error(`[N²] ✗ Failed to repair ${agent.role}:`, error);
+            // Return original fallback analysis
+            return { agent, analysis: result.analysis };
+          }
+        })
+      );
+      
+      // Replace failed analyses with repaired ones
+      repairs.forEach(({ agent, analysis }) => {
+        const index = agentResults.findIndex(({ agent: a }) => a.role === agent.role);
+        if (index !== -1) {
+          agentResults[index].result.analysis = analysis;
+        }
+      });
+    }
+    
+    // Extract final analyses
+    const analyses = agentResults.map(({ result }) => result.analysis);
     
     const agentTime = Date.now() - agentStart;
     console.log(`[N²] Agents completed in ${agentTime}ms`);

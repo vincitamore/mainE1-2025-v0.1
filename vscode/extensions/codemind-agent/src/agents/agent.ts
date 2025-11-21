@@ -86,6 +86,19 @@ export abstract class Agent {
     taskType: TaskType = TaskType.GENERAL,
     repairDirective?: string
   ): Promise<AgentAnalysis> {
+    const result = await this.analyzeWithRawResponse(request, context, taskType, repairDirective);
+    return result.analysis;
+  }
+
+  /**
+   * Analyze code and return both analysis and raw response for JSON repair if needed
+   */
+  async analyzeWithRawResponse(
+    request: string,
+    context: CodeContext,
+    taskType: TaskType = TaskType.GENERAL,
+    repairDirective?: string
+  ): Promise<{ analysis: AgentAnalysis; rawResponse: string; parseFailed: boolean }> {
     const startTime = Date.now();
     
     // Get task-specific guidance for this agent
@@ -115,7 +128,14 @@ export abstract class Agent {
     const analysis = this.parseResponse(response.content, expectedRelevance);
     analysis.executionTime = Date.now() - startTime;
     
-    return analysis;
+    // Check if parsing failed (indicated by fallback values)
+    const parseFailed = analysis.insights[0] === 'Failed to parse response - using fallback';
+    
+    return {
+      analysis,
+      rawResponse: response.content,
+      parseFailed
+    };
   }
   
   /**
@@ -233,7 +253,8 @@ export abstract class Agent {
   /**
    * Parse LLM response into structured AgentAnalysis
    */
-  protected parseResponse(response: string, expectedRelevance: number): AgentAnalysis {
+  // Make parseResponse public so N2Controller can call it after JSON Technician repair
+  public parseResponse(response: string, expectedRelevance: number): AgentAnalysis {
     const jsonStr = extractJSON(response);
     
     // Use safe JSON parser with multiple fallback strategies
