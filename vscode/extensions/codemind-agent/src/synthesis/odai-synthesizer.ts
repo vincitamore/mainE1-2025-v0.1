@@ -374,12 +374,49 @@ USER REQUEST: Generate a COMPLETE, comprehensive ${context.language} document.`;
 - Generate ALL sections, content, examples, diagrams, and details
 - This should be a production-ready, thorough document
 - DO NOT return just a snippet or outline - generate the FULL content`;
+      } else if (taskType === TaskType.REFACTORING) {
+        // REFACTORING = modifying existing file (orchestrator detected this is a "modify" operation)
+        // We need to be SURGICAL - only change what needs to change
+        codeSection = `EXISTING CODE (file already has working implementation):
+\`\`\`${context.language}
+${context.code}
+\`\`\``;
+        
+        scopeInstructions = `⚠️ CRITICAL: SURGICAL MODIFICATION REQUIRED
+This is an EXISTING, WORKING file. You must be EXTREMELY CAREFUL to preserve all existing functionality.
+
+**MODIFICATION STRATEGY:**
+1. ANALYZE what needs to change based on the user request and synthesis requirements
+2. PRESERVE all existing code that is NOT related to the requested changes
+3. Make MINIMAL, TARGETED changes to accomplish the goal
+4. Do NOT refactor or "improve" code that wasn't requested
+5. KEEP all existing imports, types, constants, and helper functions unless they conflict with changes
+6. MAINTAIN the existing code style, patterns, and architecture
+
+**OUTPUT THE FULL FILE** with your surgical modifications applied.
+- Include ALL existing code (preserved sections + your modifications)
+- Your changes should be the MINIMUM necessary to fulfill the requirements
+- If adding new functions/classes, place them appropriately without disrupting existing structure
+- If modifying existing functions, change only what's needed for the requirements
+
+**WRONG APPROACH:**
+❌ Regenerating the entire file from scratch
+❌ Removing existing code that works
+❌ Changing code style or structure unnecessarily
+❌ Adding features not requested
+
+**CORRECT APPROACH:**
+✅ Identify specific functions/sections that need modification
+✅ Preserve everything else exactly as-is
+✅ Make targeted, minimal changes
+✅ Output the complete file with your surgical edits applied`;
       } else {
+        // CODE_GENERATION or GENERAL = creating new file
         codeSection = `EXISTING CODE:
 \`\`\`${context.language}
 ${context.code}
 \`\`\``;
-        scopeInstructions = '';
+        scopeInstructions = `Generate the COMPLETE implementation for this ${taskType === TaskType.CODE_GENERATION ? 'new' : ''} file.`;
       }
     }
     
