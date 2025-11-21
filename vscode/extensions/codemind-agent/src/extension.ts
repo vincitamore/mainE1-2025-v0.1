@@ -687,7 +687,10 @@ async function handleOrchestratorRequest(userRequest: string, mentionedFiles: st
                 console.error(`[Orchestrator] ❌ Terminal command failed (exit ${result.exitCode}):`, command);
                 console.error(`[Orchestrator] stderr:`, result.stderr.join('\n'));
                 
-                // TODO: Implement retry logic - allow the model to see the error and create a new plan
+                // Mark that we have failures for post-execution analysis
+                if (!workspaceContext.hasTerminalFailures) {
+                  (workspaceContext as any).hasTerminalFailures = true;
+                }
               }
             } else {
               chatSidebarProvider.addMessage({
@@ -711,6 +714,37 @@ async function handleOrchestratorRequest(userRequest: string, mentionedFiles: st
             content: `⚠️ Cannot execute terminal command - terminal system not initialized`
           });
         }
+      }
+      
+      // Phase 4d: Verify terminal results and offer retry if needed
+      const terminalResults = (workspaceContext as any).terminalResults || [];
+      const failedCommands = terminalResults.filter((r: any) => r.exitCode !== 0);
+      
+      if (failedCommands.length > 0) {
+        console.log(`[Orchestrator] Detected ${failedCommands.length} failed terminal command(s)`);
+        
+        chatSidebarProvider.addMessage({
+          role: 'system',
+          content: `⚠️ **${failedCommands.length} terminal command(s) failed.**\n\n` +
+                   `The Orchestrator can analyze the errors and suggest fixes.\n\n` +
+                   `Failed commands:\n${failedCommands.map((c: any) => `- \`${c.command}\` (exit code ${c.exitCode})`).join('\n')}\n\n` +
+                   `Would you like me to analyze the errors and attempt to fix them?`
+        });
+        
+        // TODO: Implement interactive retry flow
+        // - User confirms they want retry
+        // - Pass terminal results to Orchestrator for analysis
+        // - Orchestrator creates recovery plan
+        // - Execute recovery plan
+        // This is part of the "iterative refinement" feature
+        
+        console.log(`[Orchestrator] Terminal failure recovery not yet implemented. Continuing with available results...`);
+      } else if (terminalResults.length > 0) {
+        console.log(`[Orchestrator] All ${terminalResults.length} terminal command(s) succeeded`);
+        chatSidebarProvider.addMessage({
+          role: 'system',
+          content: `✅ All terminal commands completed successfully!`
+        });
       }
     }
 

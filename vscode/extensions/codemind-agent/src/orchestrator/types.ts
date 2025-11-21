@@ -111,6 +111,7 @@ export interface WorkspaceContext {
     duration: number;
     timestamp: string;
   }>;
+  hasTerminalFailures?: boolean; // Flag to indicate if any terminal commands failed
 }
 
 /**

@@ -744,5 +744,114 @@ confidence: 0.85
 
     return agentMap[taskType] || agentMap[OrchestratorTaskType.GENERAL];
   }
+
+  /**
+   * Phase X: Analyze terminal failures and create recovery plan
+   * Called when terminal commands fail - allows the model to see errors and suggest fixes
+   */
+  async analyzeTerminalFailures(
+    originalRequest: string,
+    originalPlan: ExecutionPlan,
+    terminalResults: Array<{
+      command: string;
+      exitCode: number;
+      stdout: string;
+      stderr: string;
+      duration: number;
+      timestamp: string;
+    }>,
+    workspaceContext: WorkspaceContext,
+    progressCallback?: OrchestratorProgressCallback
+  ): Promise<{
+    needsRetry: boolean;
+    analysis: string;
+    recoveryPlan?: ExecutionPlan;
+  }> {
+    progressCallback?.({
+      phase: 'analyzing',
+      status: 'Analyzing terminal failures...',
+      progress: 0
+    });
+
+    const failedCommands = terminalResults.filter(r => r.exitCode !== 0);
+    
+    if (failedCommands.length === 0) {
+      return {
+        needsRetry: false,
+        analysis: 'All terminal commands succeeded'
+      };
+    }
+
+    // Build prompt for failure analysis
+    const failureSummary = failedCommands.map(cmd => `
+Command: ${cmd.command}
+Exit Code: ${cmd.exitCode}
+Error Output:
+${cmd.stderr || cmd.stdout}
+`).join('\n---\n');
+
+    const analysisPrompt = `You are analyzing why terminal commands failed during a development workflow.
+
+**Original User Request:**
+${originalRequest}
+
+**Original Plan Summary:**
+${originalPlan.summary}
+
+**Failed Commands:**
+${failureSummary}
+
+**Workspace Context:**
+- Root: ${workspaceContext.workspaceRoot}
+- Recent files: ${workspaceContext.recentFiles.slice(0, 5).join(', ')}
+
+**Your Task:**
+1. Analyze why each command failed
+2. Determine if the failures are recoverable
+3. If recoverable, suggest a recovery plan
+
+Output YAML with:
+needsRetry: true/false
+analysis: Brief explanation of failures
+recoverySteps:
+  - description: What to do
+    commands:
+      - Terminal commands to run
+    files:
+      - Files to create/modify`;
+
+    try {
+      const response = await this.llmProvider.generate(
+        [{ role: 'user', content: analysisPrompt }],
+        { ...this.config, temperature: 0.2, maxTokens: 4000 }
+      );
+
+      const result = await parseYAMLWithTechnician<{
+        needsRetry: boolean;
+        analysis: string;
+        recoverySteps?: any[];
+      }>(
+        response.content,
+        this.llmProvider,
+        this.config,
+        'terminal failure analysis'
+      );
+
+      console.log('[Orchestrator] Terminal failure analysis:', result);
+
+      return {
+        needsRetry: result.needsRetry || false,
+        analysis: result.analysis || 'Analysis failed',
+        // TODO: Convert recoverySteps into full ExecutionPlan
+        recoveryPlan: undefined
+      };
+    } catch (error) {
+      console.error('[Orchestrator] Failed to analyze terminal failures:', error);
+      return {
+        needsRetry: false,
+        analysis: `Analysis failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+      };
+    }
+  }
 }
 
